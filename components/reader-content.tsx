@@ -1,12 +1,12 @@
 'use client';
 
 import {AnimatePresence, motion} from 'framer-motion';
-import {ChevronLeft, ChevronRight, Expand, X} from 'lucide-react';
+import {ChevronLeft, ChevronRight, Expand, LoaderCircle, X} from 'lucide-react';
 import {useRouter} from 'next/navigation';
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import type {Episode, Story} from '@/data/stories';
 import type {Locale} from '@/i18n/config';
-import {EpisodeAudioPlayer} from './episode-audio-player';
+import {EpisodeAudioPlayer, type EpisodeAudioPlayerHandle} from './episode-audio-player';
 import {StoryImage} from './story-image';
 
 type ReaderContentProps = {
@@ -34,10 +34,23 @@ type ReaderContentProps = {
 
 export function ReaderContent({story, episode, episodes, locale, storyId, labels}: ReaderContentProps) {
   const router = useRouter();
+  const fullscreenAudioRef = useRef<EpisodeAudioPlayerHandle | null>(null);
+  const countdownTimerRef = useRef<number | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [spreadIndex, setSpreadIndex] = useState(() => episodes.findIndex((entry) => entry.id === episode.id));
   const [direction, setDirection] = useState(1);
+  const [isFullscreenAudioEnabled, setIsFullscreenAudioEnabled] = useState(false);
+  const [autoplayCountdown, setAutoplayCountdown] = useState<number | null>(null);
   const touchStartX = useRef<number | null>(null);
+
+  const stopAutoplayCountdown = useCallback(() => {
+    if (countdownTimerRef.current) {
+      window.clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
+
+    setAutoplayCountdown(null);
+  }, []);
 
   useEffect(() => {
     setSpreadIndex(episodes.findIndex((entry) => entry.id === episode.id));
@@ -56,6 +69,12 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
     };
   }, [isFullscreen]);
 
+  useEffect(() => {
+    return () => {
+      stopAutoplayCountdown();
+    };
+  }, [stopAutoplayCountdown]);
+
   const currentSpread = useMemo(
     () => ({
       left: episodes[Math.max(spreadIndex, 0)] ?? episode,
@@ -72,17 +91,58 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
       return;
     }
 
+    stopAutoplayCountdown();
     setDirection(nextIndex > spreadIndex ? 1 : -1);
     setSpreadIndex(nextIndex);
-  }, [episodes.length, spreadIndex]);
+  }, [episodes.length, spreadIndex, stopAutoplayCountdown]);
 
   const handleCloseFullscreen = useCallback(() => {
+    fullscreenAudioRef.current?.pause();
+    stopAutoplayCountdown();
+    setIsFullscreenAudioEnabled(false);
     setIsFullscreen(false);
 
     if (currentSpread.left.id !== episode.id) {
       router.push(`/${locale}/stories/${storyId}/${currentSpread.left.episodeNumber}`);
     }
-  }, [currentSpread.left, episode.id, locale, router, storyId]);
+  }, [currentSpread.left, episode.id, locale, router, stopAutoplayCountdown, storyId]);
+
+  const handleFullscreenPlaybackStateChange = useCallback((playing: boolean) => {
+    setIsFullscreenAudioEnabled(playing);
+
+    if (!playing) {
+      stopAutoplayCountdown();
+    }
+  }, [stopAutoplayCountdown]);
+
+  const handleFullscreenEpisodeEnd = useCallback(() => {
+    if (!isFullscreenAudioEnabled || !canGoNext) {
+      return;
+    }
+
+    stopAutoplayCountdown();
+    setAutoplayCountdown(10);
+
+    countdownTimerRef.current = window.setInterval(() => {
+      setAutoplayCountdown((currentValue) => {
+        if (currentValue === null) {
+          return null;
+        }
+
+        if (currentValue <= 1) {
+          if (countdownTimerRef.current) {
+            window.clearInterval(countdownTimerRef.current);
+            countdownTimerRef.current = null;
+          }
+
+          changeSpread(spreadIndex + 1);
+          return null;
+        }
+
+        return currentValue - 1;
+      });
+    }, 1000);
+  }, [canGoNext, changeSpread, isFullscreenAudioEnabled, spreadIndex, stopAutoplayCountdown]);
 
   useEffect(() => {
     if (!isFullscreen) {
@@ -172,6 +232,35 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
               <X className="h-5 w-5" />
             </button>
 
+            <EpisodeAudioPlayer
+              ref={fullscreenAudioRef}
+              episode={currentSpread.left}
+              locale={locale}
+              variant="fullscreen"
+              autoPlay={isFullscreen && isFullscreenAudioEnabled && autoplayCountdown === null}
+              onEnded={handleFullscreenEpisodeEnd}
+              onPlaybackStateChange={handleFullscreenPlaybackStateChange}
+              labels={{
+                heading: labels.audioHeading,
+                play: labels.playAudio,
+                pause: labels.pauseAudio,
+                audioAvailable: labels.audioAvailable,
+                audioFallback: labels.audioFallback,
+                audioUnavailable: labels.audioUnavailable,
+                audioEnhanced: labels.audioEnhanced,
+                audioLoading: labels.audioLoading
+              }}
+            />
+
+            {autoplayCountdown !== null ? (
+              <div className="pointer-events-none absolute inset-x-0 bottom-28 z-30 flex justify-center px-4">
+                <div className="inline-flex items-center gap-3 rounded-full bg-background/90 px-5 py-3 text-sm font-medium text-foreground shadow-paper backdrop-blur">
+                  <LoaderCircle className="h-4 w-4 animate-spin text-primary" />
+                  <span>{`${labels.nextEpisode} • ${autoplayCountdown}s`}</span>
+                </div>
+              </div>
+            ) : null}
+
             <div
               className="reader-book relative h-screen w-screen overflow-hidden bg-background"
               onTouchStart={(event) => {
@@ -198,7 +287,7 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
               <button
                 type="button"
                 aria-label={labels.previousEpisode}
-                className="absolute inset-y-0 left-0 z-20 hidden w-16 items-center justify-center text-muted transition hover:text-primary disabled:cursor-not-allowed disabled:opacity-30 sm:flex"
+                className="absolute inset-y-0 left-0 z-20 hidden w-20 items-center justify-center bg-gradient-to-r from-background/70 to-transparent text-muted transition hover:text-primary disabled:cursor-not-allowed disabled:opacity-30 sm:flex"
                 onClick={() => changeSpread(spreadIndex - 1)}
                 disabled={!canGoPrevious}
               >
@@ -207,14 +296,14 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
               <button
                 type="button"
                 aria-label={labels.nextEpisode}
-                className="absolute inset-y-0 right-0 z-20 hidden w-16 items-center justify-center text-muted transition hover:text-primary disabled:cursor-not-allowed disabled:opacity-30 sm:flex"
+                className="absolute inset-y-0 right-0 z-20 hidden w-20 items-center justify-center bg-gradient-to-l from-background/70 to-transparent text-muted transition hover:text-primary disabled:cursor-not-allowed disabled:opacity-30 sm:flex"
                 onClick={() => changeSpread(spreadIndex + 1)}
                 disabled={!canGoNext}
               >
                 <ChevronRight className="h-8 w-8" />
               </button>
 
-              <div className="flex h-full w-full items-stretch justify-center p-0 sm:p-4 lg:p-6">
+              <div className="flex h-full w-full items-stretch justify-center p-0 sm:px-20 sm:py-4 lg:px-24 lg:py-6">
                 <AnimatePresence mode="wait" custom={direction}>
                   <motion.div
                     key={currentSpread.left.id}
@@ -261,23 +350,6 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
                   </motion.div>
                 </AnimatePresence>
               </div>
-
-              <button
-                type="button"
-                aria-hidden="true"
-                tabIndex={-1}
-                className="absolute inset-y-0 left-0 z-10 w-1/2"
-                onClick={() => changeSpread(spreadIndex - 1)}
-                disabled={!canGoPrevious}
-              />
-              <button
-                type="button"
-                aria-hidden="true"
-                tabIndex={-1}
-                className="absolute inset-y-0 right-0 z-10 w-1/2"
-                onClick={() => changeSpread(spreadIndex + 1)}
-                disabled={!canGoNext}
-              />
             </div>
           </motion.div>
         ) : null}
