@@ -1,0 +1,55 @@
+{
+  "Nav": {
+    "home": "Home",
+    "library": "Library",
+    "reader": "Story Reader",
+    "toggleTheme": "Toggle theme",
+    "brandTagline": "Editorial narratives",
+    "openMenu": "Open navigation menu"
+  },
+  "Controls": {
+    "toggleTheme": "Toggle theme",
+    "languageSelector": "Select language",
+    "toggleAudio": "Toggle audio narration",
+    "audioOn": "Audio on",
+    "audioOff": "Audio off"
+  },
+  "Home": {
+    "eyebrow": "Curated AI tales",
+    "title": "Experience Stories Like Never Before",
+    "description": "Discover immersive AI-crafted narratives in a premium editorial reading space designed for calm focus, lyrical pacing, and cinematic wonder.",
+    "startReading": "Start Reading",
+    "browseLibrary": "Browse Library",
+    "heroArtworkAlt": "Dreamlike editorial artwork for the storytelling hero",
+    "featuredLabel": "Featured narrative",
+    "readFeatured": "Read featured story",
+    "editorNote": "Editor's note",
+    "editorDescription": "Crafted with a classic literary rhythm and a modern streaming sensibility, each story is designed to feel collectible, contemplative, and alive.",
+    "previewLabel": "Curated shelf",
+    "previewTitle": "Story previews"
+  },
+  "Library": {
+    "eyebrow": "Editorial collection",
+    "title": "The Great Library",
+    "description": "Browse richly illustrated, episodic AI stories arranged like a modern reading salon — responsive, multilingual, and built for deep immersion.",
+    "readStory": "Read Story",
+    "parts": "Parts"
+  },
+  "Reader": {
+    "breadcrumb": "Story breadcrumb",
+    "home": "Home",
+    "library": "Library",
+    "readingNow": "Reading now",
+    "episodeGuide": "Episode guide",
+    "part": "Part {number}",
+    "episodes": "Episodes",
+    "closeEpisodes": "Close episodes drawer",
+    "readingProgress": "Reading progress",
+    "previousEpisode": "Previous episode",
+    "nextEpisode": "Next episode"
+  },
+  "Footer": {
+    "tagline": "Classic literature atmosphere meets modern AI storytelling.",
+    "copyright": "Designed for immersive reading across every screen."
+  }
+}

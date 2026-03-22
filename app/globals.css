@@ -1,0 +1,63 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-background: #f5efe6;
+  --color-foreground: #2a1f1a;
+  --color-primary: #8b1e1e;
+  --color-accent: #c8a951;
+  --color-card: #fbf7f0;
+  --color-border: rgba(112, 78, 51, 0.18);
+  --color-muted: #72584b;
+}
+
+.dark {
+  --color-background: #121212;
+  --color-foreground: #eaeaea;
+  --color-primary: #e0b15c;
+  --color-accent: #b87333;
+  --color-card: #1e1e1e;
+  --color-border: rgba(224, 177, 92, 0.16);
+  --color-muted: #b7aca5;
+}
+
+* {
+  border-color: var(--color-border);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-background text-foreground font-sans antialiased;
+  background-image:
+    radial-gradient(circle at top, rgba(200, 169, 81, 0.12), transparent 28%),
+    linear-gradient(180deg, rgba(255,255,255,0.18), transparent 35%);
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.4;
+  background-image: radial-gradient(circle at 1px 1px, rgba(139, 30, 30, 0.08) 1px, transparent 0);
+  background-size: 24px 24px;
+  mask-image: linear-gradient(180deg, rgba(0,0,0,0.25), transparent 90%);
+}
+
+@layer utilities {
+  .editorial-shell {
+    @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
+  }
+
+  .paper-panel {
+    @apply rounded-[2rem] border border-border bg-card/95 shadow-paper backdrop-blur-sm;
+  }
+
+  .drop-cap > p:first-child::first-letter {
+    @apply mr-2 float-left font-serif text-5xl leading-[0.8] text-primary;
+  }
+}
