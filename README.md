@@ -70,6 +70,17 @@ Each episode document inside `stories/{storyId}/episodes` supports the same loca
 ```
 
 
+
+## ElevenLabs narration
+
+When an episode does not already include an `audioUrl`, the reader now tries to generate narration through ElevenLabs first and automatically falls back to the browser's built-in speech synthesis if ElevenLabs is unavailable or returns a quota/credit error.
+
+Set these environment variables to enable the AI voice:
+
+- `ELEVENLABS_API_KEY`
+- `ELEVENLABS_VOICE_ID` or locale-specific overrides such as `ELEVENLABS_VOICE_ID_EN`, `ELEVENLABS_VOICE_ID_HI`, and `ELEVENLABS_VOICE_ID_MR`
+- `ELEVENLABS_MODEL_ID` or locale-specific overrides such as `ELEVENLABS_MODEL_ID_EN`, `ELEVENLABS_MODEL_ID_HI`, and `ELEVENLABS_MODEL_ID_MR`
+
 ## Firebase config
 
 The server-side Firestore REST loader reads these environment variables when present:

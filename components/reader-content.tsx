@@ -24,6 +24,8 @@ type ReaderContentProps = {
     audioAvailable: string;
     audioFallback: string;
     audioUnavailable: string;
+    audioEnhanced: string;
+    audioLoading: string;
     pageHint: string;
     nextEpisode: string;
     previousEpisode: string;
@@ -111,7 +113,9 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
             pause: labels.pauseAudio,
             audioAvailable: labels.audioAvailable,
             audioFallback: labels.audioFallback,
-            unavailable: labels.audioUnavailable
+            audioUnavailable: labels.audioUnavailable,
+            audioEnhanced: labels.audioEnhanced,
+            audioLoading: labels.audioLoading
           }}
         />
       </article>

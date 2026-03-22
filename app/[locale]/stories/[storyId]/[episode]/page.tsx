@@ -65,6 +65,8 @@ export default async function StoryReaderPage({params}: {params: Promise<{storyI
               audioAvailable: t('audioAvailable'),
               audioFallback: t('audioFallback'),
               audioUnavailable: t('audioUnavailable'),
+              audioEnhanced: t('audioEnhanced'),
+              audioLoading: t('audioLoading'),
               pageHint: t('pageHint'),
               nextEpisode: t('nextEpisode'),
               previousEpisode: t('previousEpisode')
