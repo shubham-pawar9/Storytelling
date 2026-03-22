@@ -32,6 +32,12 @@ type ReaderContentProps = {
   };
 };
 
+function getHighlightClass(isActive: boolean) {
+  return isActive
+    ? 'bg-yellow-300/80 text-foreground shadow-[0_0_0_0.25rem_rgba(253,224,71,0.28)] dark:bg-yellow-300/70'
+    : 'bg-transparent';
+}
+
 export function ReaderContent({story, episode, episodes, locale, storyId, labels}: ReaderContentProps) {
   const router = useRouter();
   const fullscreenAudioRef = useRef<EpisodeAudioPlayerHandle | null>(null);
@@ -41,6 +47,8 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
   const [direction, setDirection] = useState(1);
   const [isFullscreenAudioEnabled, setIsFullscreenAudioEnabled] = useState(false);
   const [autoplayCountdown, setAutoplayCountdown] = useState<number | null>(null);
+  const [activeReadingParagraph, setActiveReadingParagraph] = useState<number | null>(null);
+  const [activeFullscreenParagraph, setActiveFullscreenParagraph] = useState<number | null>(null);
   const touchStartX = useRef<number | null>(null);
 
   const stopAutoplayCountdown = useCallback(() => {
@@ -54,7 +62,12 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
 
   useEffect(() => {
     setSpreadIndex(episodes.findIndex((entry) => entry.id === episode.id));
+    setActiveReadingParagraph(null);
   }, [episode.id, episodes]);
+
+  useEffect(() => {
+    setActiveFullscreenParagraph(null);
+  }, [spreadIndex]);
 
   useEffect(() => {
     if (!isFullscreen) {
@@ -85,22 +98,35 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
 
   const canGoPrevious = spreadIndex > 0;
   const canGoNext = spreadIndex < episodes.length - 1;
+  const previousEpisodeNumber = episode.episodeNumber > 1 ? episode.episodeNumber - 1 : 1;
+  const nextEpisodeNumber = episode.episodeNumber < episodes.length ? episode.episodeNumber + 1 : episode.episodeNumber;
 
   const changeSpread = useCallback((nextIndex: number) => {
     if (nextIndex < 0 || nextIndex >= episodes.length) {
       return;
     }
 
+    fullscreenAudioRef.current?.pause();
+    setActiveFullscreenParagraph(null);
     stopAutoplayCountdown();
     setDirection(nextIndex > spreadIndex ? 1 : -1);
     setSpreadIndex(nextIndex);
   }, [episodes.length, spreadIndex, stopAutoplayCountdown]);
+
+  const handlePreviousEpisode = useCallback(() => {
+    router.push(`/${locale}/stories/${storyId}/${previousEpisodeNumber}`);
+  }, [locale, previousEpisodeNumber, router, storyId]);
+
+  const handleNextEpisode = useCallback(() => {
+    router.push(`/${locale}/stories/${storyId}/${nextEpisodeNumber}`);
+  }, [locale, nextEpisodeNumber, router, storyId]);
 
   const handleCloseFullscreen = useCallback(() => {
     fullscreenAudioRef.current?.pause();
     stopAutoplayCountdown();
     setIsFullscreenAudioEnabled(false);
     setIsFullscreen(false);
+    setActiveFullscreenParagraph(null);
 
     if (currentSpread.left.id !== episode.id) {
       router.push(`/${locale}/stories/${storyId}/${currentSpread.left.episodeNumber}`);
@@ -193,8 +219,11 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
           </button>
         </header>
         <div className="paper-panel drop-cap px-6 py-8 sm:px-8 lg:px-10">
-          {episode.content.map((paragraph) => (
-            <p key={paragraph} className="mb-6 max-w-3xl text-lg leading-9 text-foreground/90 last:mb-0">
+          {episode.content.map((paragraph, index) => (
+            <p
+              key={paragraph}
+              className={`mb-6 max-w-3xl rounded-2xl px-3 py-2 text-lg leading-9 transition-colors last:mb-0 ${getHighlightClass(activeReadingParagraph === index)}`}
+            >
               {paragraph}
             </p>
           ))}
@@ -202,6 +231,14 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
         <EpisodeAudioPlayer
           episode={episode}
           locale={locale}
+          onActiveParagraphChange={setActiveReadingParagraph}
+          navigation={{
+            previousLabel: labels.previousEpisode,
+            nextLabel: labels.nextEpisode,
+            onPrevious: handlePreviousEpisode,
+            onNext: handleNextEpisode,
+            disableNext: episode.episodeNumber >= episodes.length
+          }}
           labels={{
             heading: labels.audioHeading,
             play: labels.playAudio,
@@ -240,6 +277,14 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
               autoPlay={isFullscreen && isFullscreenAudioEnabled && autoplayCountdown === null}
               onEnded={handleFullscreenEpisodeEnd}
               onPlaybackStateChange={handleFullscreenPlaybackStateChange}
+              onActiveParagraphChange={setActiveFullscreenParagraph}
+              navigation={{
+                previousLabel: labels.previousEpisode,
+                nextLabel: labels.nextEpisode,
+                onPrevious: () => changeSpread(0),
+                onNext: () => changeSpread(spreadIndex + 1),
+                disableNext: !canGoNext
+              }}
               labels={{
                 heading: labels.audioHeading,
                 play: labels.playAudio,
@@ -332,8 +377,11 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
                             </div>
                             <div className="book-scroll flex-1 overflow-auto pr-2">
                               <div className="space-y-5">
-                                {spreadEpisode.content.map((paragraph) => (
-                                  <p key={`${spreadEpisode.id}-${paragraph.slice(0, 24)}`} className="text-base leading-8 text-foreground/90 sm:text-lg lg:leading-9">
+                                {spreadEpisode.content.map((paragraph, index) => (
+                                  <p
+                                    key={`${spreadEpisode.id}-${paragraph.slice(0, 24)}`}
+                                    className={`rounded-2xl px-3 py-2 text-base leading-8 transition-colors sm:text-lg lg:leading-9 ${getHighlightClass(spreadEpisode.id === currentSpread.left.id && activeFullscreenParagraph === index)}`}
+                                  >
                                     {paragraph}
                                   </p>
                                 ))}
