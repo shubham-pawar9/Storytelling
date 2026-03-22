@@ -1,9 +1,9 @@
 'use client';
 
 import {AnimatePresence, motion} from 'framer-motion';
-import {BookOpen, ChevronLeft, ChevronRight, Expand, X} from 'lucide-react';
+import {ChevronLeft, ChevronRight, Expand, X} from 'lucide-react';
 import {useRouter} from 'next/navigation';
-import {useEffect, useMemo, useRef, useState} from 'react';
+import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import type {Episode, Story} from '@/data/stories';
 import type {Locale} from '@/i18n/config';
 import {EpisodeAudioPlayer} from './episode-audio-player';
@@ -35,12 +35,12 @@ type ReaderContentProps = {
 export function ReaderContent({story, episode, episodes, locale, storyId, labels}: ReaderContentProps) {
   const router = useRouter();
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [fullscreenIndex, setFullscreenIndex] = useState(() => episodes.findIndex((entry) => entry.id === episode.id));
+  const [spreadIndex, setSpreadIndex] = useState(() => episodes.findIndex((entry) => entry.id === episode.id));
   const [direction, setDirection] = useState(1);
   const touchStartX = useRef<number | null>(null);
 
   useEffect(() => {
-    setFullscreenIndex(episodes.findIndex((entry) => entry.id === episode.id));
+    setSpreadIndex(episodes.findIndex((entry) => entry.id === episode.id));
   }, [episode.id, episodes]);
 
   useEffect(() => {
@@ -56,24 +56,59 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
     };
   }, [isFullscreen]);
 
-  const currentFullscreenEpisode = useMemo(() => episodes[Math.max(fullscreenIndex, 0)] ?? episode, [episode, episodes, fullscreenIndex]);
+  const currentSpread = useMemo(
+    () => ({
+      left: episodes[Math.max(spreadIndex, 0)] ?? episode,
+      right: episodes[spreadIndex + 1] ?? null
+    }),
+    [episode, episodes, spreadIndex]
+  );
 
-  const changeEpisode = (nextIndex: number) => {
+  const canGoPrevious = spreadIndex > 0;
+  const canGoNext = spreadIndex < episodes.length - 1;
+
+  const changeSpread = useCallback((nextIndex: number) => {
     if (nextIndex < 0 || nextIndex >= episodes.length) {
       return;
     }
 
-    setDirection(nextIndex > fullscreenIndex ? 1 : -1);
-    setFullscreenIndex(nextIndex);
-  };
+    setDirection(nextIndex > spreadIndex ? 1 : -1);
+    setSpreadIndex(nextIndex);
+  }, [episodes.length, spreadIndex]);
 
-  const handleCloseFullscreen = () => {
+  const handleCloseFullscreen = useCallback(() => {
     setIsFullscreen(false);
 
-    if (currentFullscreenEpisode.id !== episode.id) {
-      router.push(`/${locale}/stories/${storyId}/${currentFullscreenEpisode.episodeNumber}`);
+    if (currentSpread.left.id !== episode.id) {
+      router.push(`/${locale}/stories/${storyId}/${currentSpread.left.episodeNumber}`);
     }
-  };
+  }, [currentSpread.left, episode.id, locale, router, storyId]);
+
+  useEffect(() => {
+    if (!isFullscreen) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        handleCloseFullscreen();
+      }
+
+      if (event.key === 'ArrowRight') {
+        changeSpread(spreadIndex + 1);
+      }
+
+      if (event.key === 'ArrowLeft') {
+        changeSpread(spreadIndex - 1);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [changeSpread, handleCloseFullscreen, isFullscreen, spreadIndex]);
 
   return (
     <>
@@ -126,127 +161,123 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
             initial={{opacity: 0}}
             animate={{opacity: 1}}
             exit={{opacity: 0}}
-            className="fixed inset-0 z-[90] bg-background/95 backdrop-blur-md"
+            className="fixed inset-0 z-[90] bg-background"
           >
-            <div className="flex h-full flex-col p-4 sm:p-6 lg:p-8">
-              <div className="mb-4 flex items-center justify-between gap-4">
-                <div>
-                  <p className="text-sm uppercase tracking-[0.3em] text-primary">{story.title}</p>
-                  <p className="mt-1 text-sm text-muted">{labels.pageHint}</p>
-                </div>
-                <button
-                  type="button"
-                  aria-label={labels.closeFullscreen}
-                  onClick={handleCloseFullscreen}
-                  className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-border bg-card text-foreground transition hover:border-primary hover:text-primary"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
+            <button
+              type="button"
+              aria-label={labels.closeFullscreen}
+              onClick={handleCloseFullscreen}
+              className="absolute right-4 top-4 z-30 inline-flex h-12 w-12 items-center justify-center rounded-full bg-background/85 text-foreground shadow-paper backdrop-blur sm:right-6 sm:top-6"
+            >
+              <X className="h-5 w-5" />
+            </button>
 
-              <div
-                className="reader-book relative flex-1 overflow-hidden rounded-[2rem] border border-border bg-card/95 p-3 shadow-paper sm:p-5"
-                onTouchStart={(event) => {
-                  touchStartX.current = event.changedTouches[0]?.clientX ?? null;
-                }}
-                onTouchEnd={(event) => {
-                  const touchEndX = event.changedTouches[0]?.clientX ?? null;
-                  if (touchStartX.current === null || touchEndX === null) {
-                    return;
-                  }
+            <div
+              className="reader-book relative h-screen w-screen overflow-hidden bg-background"
+              onTouchStart={(event) => {
+                touchStartX.current = event.changedTouches[0]?.clientX ?? null;
+              }}
+              onTouchEnd={(event) => {
+                const touchEndX = event.changedTouches[0]?.clientX ?? null;
+                if (touchStartX.current === null || touchEndX === null) {
+                  return;
+                }
 
-                  const delta = touchEndX - touchStartX.current;
-                  if (Math.abs(delta) < 40) {
-                    return;
-                  }
+                const delta = touchEndX - touchStartX.current;
+                if (Math.abs(delta) < 40) {
+                  return;
+                }
 
-                  if (delta < 0) {
-                    changeEpisode(fullscreenIndex + 1);
-                  } else {
-                    changeEpisode(fullscreenIndex - 1);
-                  }
-                }}
-                onContextMenu={(event) => {
-                  const width = event.currentTarget.clientWidth;
-                  const clickX = event.clientX - event.currentTarget.getBoundingClientRect().left;
-                  if (clickX > width / 2) {
-                    event.preventDefault();
-                    changeEpisode(fullscreenIndex + 1);
-                  }
-                }}
+                if (delta < 0) {
+                  changeSpread(spreadIndex + 1);
+                } else {
+                  changeSpread(spreadIndex - 1);
+                }
+              }}
+            >
+              <button
+                type="button"
+                aria-label={labels.previousEpisode}
+                className="absolute inset-y-0 left-0 z-20 hidden w-16 items-center justify-center text-muted transition hover:text-primary disabled:cursor-not-allowed disabled:opacity-30 sm:flex"
+                onClick={() => changeSpread(spreadIndex - 1)}
+                disabled={!canGoPrevious}
               >
-                <button
-                  type="button"
-                  aria-label={labels.previousEpisode}
-                  className="absolute inset-y-0 left-0 z-10 hidden w-20 items-center justify-center text-muted transition hover:text-primary sm:flex"
-                  onClick={() => changeEpisode(fullscreenIndex - 1)}
-                >
-                  <ChevronLeft className="h-8 w-8" />
-                </button>
-                <button
-                  type="button"
-                  aria-label={labels.nextEpisode}
-                  className="absolute inset-y-0 right-0 z-10 hidden w-20 items-center justify-center text-muted transition hover:text-primary sm:flex"
-                  onClick={() => changeEpisode(fullscreenIndex + 1)}
-                >
-                  <ChevronRight className="h-8 w-8" />
-                </button>
+                <ChevronLeft className="h-8 w-8" />
+              </button>
+              <button
+                type="button"
+                aria-label={labels.nextEpisode}
+                className="absolute inset-y-0 right-0 z-20 hidden w-16 items-center justify-center text-muted transition hover:text-primary disabled:cursor-not-allowed disabled:opacity-30 sm:flex"
+                onClick={() => changeSpread(spreadIndex + 1)}
+                disabled={!canGoNext}
+              >
+                <ChevronRight className="h-8 w-8" />
+              </button>
 
-                <div className="flex h-full flex-col justify-center px-2 sm:px-14">
-                  <AnimatePresence mode="wait" custom={direction}>
-                    <motion.div
-                      key={currentFullscreenEpisode.id}
-                      custom={direction}
-                      initial={{rotateY: direction > 0 ? -80 : 80, opacity: 0, x: direction > 0 ? 90 : -90}}
-                      animate={{rotateY: 0, opacity: 1, x: 0}}
-                      exit={{rotateY: direction > 0 ? 80 : -80, opacity: 0, x: direction > 0 ? -90 : 90}}
-                      transition={{duration: 0.45, ease: 'easeInOut'}}
-                      className="reader-page mx-auto flex h-full w-full max-w-5xl origin-center flex-col overflow-hidden rounded-[1.75rem] border border-border bg-background px-5 py-6 sm:px-8 sm:py-8"
-                    >
-                      <div className="mb-6 grid gap-6 lg:grid-cols-[0.95fr_1.05fr] lg:items-start">
-                        <div className="relative aspect-[4/5] overflow-hidden rounded-[1.5rem] border border-border">
-                          <StoryImage src={currentFullscreenEpisode.aiImage} alt={currentFullscreenEpisode.title} fill className="object-cover" sizes="(max-width: 1024px) 100vw, 35vw" />
-                        </div>
-                        <div>
-                          <div className="inline-flex items-center gap-2 rounded-full border border-border px-3 py-1 text-xs uppercase tracking-[0.25em] text-primary">
-                            <BookOpen className="h-3.5 w-3.5" />
-                            {currentFullscreenEpisode.title}
+              <div className="flex h-full w-full items-stretch justify-center p-0 sm:p-4 lg:p-6">
+                <AnimatePresence mode="wait" custom={direction}>
+                  <motion.div
+                    key={currentSpread.left.id}
+                    custom={direction}
+                    initial={{rotateY: direction > 0 ? -18 : 18, opacity: 0.2, x: direction > 0 ? 80 : -80}}
+                    animate={{rotateY: 0, opacity: 1, x: 0}}
+                    exit={{rotateY: direction > 0 ? 16 : -16, opacity: 0.08, x: direction > 0 ? -80 : 80}}
+                    transition={{duration: 0.5, ease: 'easeInOut'}}
+                    className="reader-spread flex h-full w-full origin-center overflow-hidden border-y border-border bg-card sm:rounded-[2rem] sm:border"
+                  >
+                    {[currentSpread.left, currentSpread.right].map((spreadEpisode, pageIndex) => (
+                      <section
+                        key={spreadEpisode ? `${currentSpread.left.id}-${spreadEpisode.id}-${pageIndex}` : `${currentSpread.left.id}-blank-${pageIndex}`}
+                        className="reader-sheet flex min-w-0 flex-1 flex-col overflow-hidden px-5 py-8 sm:px-8 lg:px-12"
+                      >
+                        {spreadEpisode ? (
+                          <>
+                            <div className="mb-6 flex items-start justify-between gap-4 border-b border-border/70 pb-4">
+                              <div className="min-w-0">
+                                <p className="text-xs uppercase tracking-[0.35em] text-primary">{story.title}</p>
+                                <h2 className="mt-3 font-serif text-2xl leading-tight sm:text-3xl">{spreadEpisode.title}</h2>
+                              </div>
+                              <span className="shrink-0 text-sm uppercase tracking-[0.3em] text-muted">
+                                {spreadEpisode.episodeNumber}
+                              </span>
+                            </div>
+                            <div className="book-scroll flex-1 overflow-auto pr-2">
+                              <div className="space-y-5">
+                                {spreadEpisode.content.map((paragraph) => (
+                                  <p key={`${spreadEpisode.id}-${paragraph.slice(0, 24)}`} className="text-base leading-8 text-foreground/90 sm:text-lg lg:leading-9">
+                                    {paragraph}
+                                  </p>
+                                ))}
+                              </div>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="flex h-full items-center justify-center text-center text-sm uppercase tracking-[0.3em] text-muted">
+                            {story.title}
                           </div>
-                          <div className="mt-4 space-y-4 overflow-auto pr-2 sm:max-h-[62vh]">
-                            {currentFullscreenEpisode.content.map((paragraph) => (
-                              <p key={`${currentFullscreenEpisode.id}-${paragraph.slice(0, 24)}`} className="text-base leading-8 text-foreground/90 sm:text-lg">
-                                {paragraph}
-                              </p>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="mt-auto flex items-center justify-between border-t border-border pt-4 text-sm text-muted">
-                        <span>{labels.previousEpisode}</span>
-                        <span>
-                          {fullscreenIndex + 1} / {episodes.length}
-                        </span>
-                        <span>{labels.nextEpisode}</span>
-                      </div>
-                    </motion.div>
-                  </AnimatePresence>
-                </div>
-
-                <button
-                  type="button"
-                  aria-hidden="true"
-                  tabIndex={-1}
-                  className="absolute inset-y-0 left-0 w-1/2"
-                  onClick={() => changeEpisode(fullscreenIndex - 1)}
-                />
-                <button
-                  type="button"
-                  aria-hidden="true"
-                  tabIndex={-1}
-                  className="absolute inset-y-0 right-0 w-1/2"
-                  onClick={() => changeEpisode(fullscreenIndex + 1)}
-                />
+                        )}
+                      </section>
+                    ))}
+                  </motion.div>
+                </AnimatePresence>
               </div>
+
+              <button
+                type="button"
+                aria-hidden="true"
+                tabIndex={-1}
+                className="absolute inset-y-0 left-0 z-10 w-1/2"
+                onClick={() => changeSpread(spreadIndex - 1)}
+                disabled={!canGoPrevious}
+              />
+              <button
+                type="button"
+                aria-hidden="true"
+                tabIndex={-1}
+                className="absolute inset-y-0 right-0 z-10 w-1/2"
+                onClick={() => changeSpread(spreadIndex + 1)}
+                disabled={!canGoNext}
+              />
             </div>
           </motion.div>
         ) : null}
