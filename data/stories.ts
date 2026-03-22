@@ -19,6 +19,7 @@ export type Episode = {
   title: string;
   content: string[];
   aiImage: string;
+  audioUrl?: string;
 };
 
 type StoryFields = Omit<Story, "id" | "language">;
@@ -209,7 +210,8 @@ function getFallbackEpisodes(locale: Locale, storyId: string): Episode[] {
         `${openingParagraphs[locale][1]} ${story.description}`,
         `${openingParagraphs[locale][2]} ${story.quote}`
       ],
-      aiImage: story.featureImage
+      aiImage: story.featureImage,
+      audioUrl: undefined
     };
   });
 }
@@ -279,6 +281,42 @@ function getTextValue(source: Record<string, unknown>, ...keys: string[]): strin
   return null;
 }
 
+function getRecordValue(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function getAssetValue(source: Record<string, unknown>, ...keys: string[]): string | null {
+  for (const key of keys) {
+    const value = source[key];
+
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+
+    const record = getRecordValue(value);
+
+    if (!record) {
+      continue;
+    }
+
+    const directValue = getTextValue(record, "url", "src", "path", "href", "downloadURL");
+    if (directValue) {
+      return directValue;
+    }
+
+    for (const nestedKey of ["image", "cover", "file", "asset", "audio"]) {
+      const nestedRecord = getRecordValue(record[nestedKey]);
+      const nestedValue = nestedRecord ? getTextValue(nestedRecord, "url", "src", "path", "href", "downloadURL") : null;
+
+      if (nestedValue) {
+        return nestedValue;
+      }
+    }
+  }
+
+  return null;
+}
+
 function normalizeStory(id: string, locale: Locale, source: Record<string, unknown>): Story | null {
   const localized = getLocalizedFields<StoryFields>(source as Partial<StoryFields> & LocalizedFields<StoryFields>, locale) as Record<string, unknown>;
   const title = getTextValue(localized, "title", "name", "label") ?? toTitleCase(id);
@@ -293,11 +331,11 @@ function normalizeStory(id: string, locale: Locale, source: Record<string, unkno
     language: locale,
     title,
     description,
-    coverImage: getTextValue(localized, "coverImage", "cover", "coverUrl", "thumbnail") ?? "/covers/ramayana.svg",
+    coverImage: getAssetValue(localized, "coverImage", "cover", "coverUrl", "thumbnail", "image") ?? "/covers/ramayana.svg",
     totalEpisodes: typeof localized.totalEpisodes === "number" ? localized.totalEpisodes : typeof localized.episodeCount === "number" ? localized.episodeCount : 0,
     genre: getTextValue(localized, "genre", "category") ?? "Story",
     quote: getTextValue(localized, "quote", "tagline", "excerpt") ?? description,
-    featureImage: getTextValue(localized, "featureImage", "featuredImage", "heroImage", "bannerImage") ?? getTextValue(localized, "coverImage", "cover", "coverUrl", "thumbnail") ?? "/art/ramayana-hall.svg"
+    featureImage: getAssetValue(localized, "featureImage", "featuredImage", "heroImage", "bannerImage", "image") ?? getAssetValue(localized, "coverImage", "cover", "coverUrl", "thumbnail") ?? "/art/ramayana-hall.svg"
   };
 }
 
@@ -322,7 +360,8 @@ function normalizeEpisode(storyId: string, locale: Locale, source: Record<string
     episodeNumber,
     title,
     content,
-    aiImage: getTextValue(localized, "aiImage", "image", "imageUrl", "coverImage") ?? "/art/ramayana-hall.svg"
+    aiImage: getAssetValue(localized, "aiImage", "image", "imageUrl", "coverImage", "media") ?? "/art/ramayana-hall.svg",
+    audioUrl: getAssetValue(localized, "audioUrl", "audio", "audioSrc", "narrationUrl", "voiceUrl", "media") ?? undefined
   };
 }
 

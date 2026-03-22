@@ -50,7 +50,26 @@ export default async function StoryReaderPage({params}: {params: Promise<{storyI
       <div className="grid gap-8 lg:grid-cols-[280px_minmax(0,1fr)] lg:items-start">
         <EpisodeSidebar episodes={episodes} activeEpisode={currentEpisode.episodeNumber} locale={locale} storyId={storyId} />
         <div className="space-y-8">
-          <ReaderContent story={story} episode={currentEpisode} />
+          <ReaderContent
+            story={story}
+            episode={currentEpisode}
+            episodes={episodes}
+            locale={locale}
+            storyId={storyId}
+            labels={{
+              fullscreen: t('fullscreen'),
+              closeFullscreen: t('closeFullscreen'),
+              audioHeading: t('audioHeading'),
+              playAudio: t('playAudio'),
+              pauseAudio: t('pauseAudio'),
+              audioAvailable: t('audioAvailable'),
+              audioFallback: t('audioFallback'),
+              audioUnavailable: t('audioUnavailable'),
+              pageHint: t('pageHint'),
+              nextEpisode: t('nextEpisode'),
+              previousEpisode: t('previousEpisode')
+            }}
+          />
           <div className="paper-panel space-y-6 p-6">
             <ProgressBar value={progress} label={t('readingProgress')} />
             <div className="flex flex-col gap-3 sm:flex-row sm:justify-between">

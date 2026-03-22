@@ -1,7 +1,7 @@
-import Image from 'next/image';
 import Link from 'next/link';
 import {getTranslations} from 'next-intl/server';
 import type {Story} from '@/data/stories';
+import {StoryImage} from './story-image';
 
 export async function FeaturedNarrative({story, locale}: {story: Story; locale: string}) {
   const t = await getTranslations('Home');
@@ -18,7 +18,7 @@ export async function FeaturedNarrative({story, locale}: {story: Story; locale: 
           </Link>
         </div>
         <div className="relative min-h-72 overflow-hidden rounded-[1.5rem] border border-border">
-          <Image src={story.featureImage} alt={story.title} fill className="object-cover" />
+          <StoryImage src={story.featureImage} alt={story.title} fill className="object-cover" sizes="(max-width: 1024px) 100vw, 40vw" />
         </div>
       </article>
       <aside className="paper-panel flex flex-col justify-between gap-8 p-8">
