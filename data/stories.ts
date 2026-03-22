@@ -40,11 +40,12 @@ type FirestoreDocument = {
 type LocalizedFields<T> = Partial<Record<Locale, Partial<T>>> & {
   translations?: Partial<Record<Locale, Partial<T>>>;
   locales?: Partial<Record<Locale, Partial<T>>>;
+  languages?: Partial<Record<Locale, Partial<T>>>;
 };
 
 const firestoreConfig = {
-  apiKey: "AIzaSyAxB2FX_fNeue30Pn_06Cou2-Y3f6kQ7cc",
-  projectId: "storytelling-2d8a4"
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY ?? "AIzaSyAxB2FX_fNeue30Pn_06Cou2-Y3f6kQ7cc",
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ?? "storytelling-2d8a4"
 };
 
 const partLabel: Record<Locale, string> = {
@@ -254,16 +255,36 @@ function parseFirestoreDocument(document: FirestoreDocument): Record<string, unk
 }
 
 function getLocalizedFields<T extends object>(source: Partial<T> & LocalizedFields<T>, locale: Locale): Partial<T> {
-  const byLocale = source[locale] ?? source.translations?.[locale] ?? source.locales?.[locale] ?? {};
+  const byLocale = source[locale] ?? source.translations?.[locale] ?? source.locales?.[locale] ?? source.languages?.[locale] ?? {};
   return {...source, ...byLocale};
 }
 
-function normalizeStory(id: string, locale: Locale, source: Record<string, unknown>): Story | null {
-  const localized = getLocalizedFields<StoryFields>(source as Partial<StoryFields> & LocalizedFields<StoryFields>, locale);
-  const title = typeof localized.title === "string" ? localized.title : null;
-  const description = typeof localized.description === "string" ? localized.description : null;
+function toTitleCase(value: string): string {
+  return value
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
 
-  if (!title || !description) {
+function getTextValue(source: Record<string, unknown>, ...keys: string[]): string | null {
+  for (const key of keys) {
+    const value = source[key];
+
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return null;
+}
+
+function normalizeStory(id: string, locale: Locale, source: Record<string, unknown>): Story | null {
+  const localized = getLocalizedFields<StoryFields>(source as Partial<StoryFields> & LocalizedFields<StoryFields>, locale) as Record<string, unknown>;
+  const title = getTextValue(localized, "title", "name", "label") ?? toTitleCase(id);
+  const description = getTextValue(localized, "description", "summary", "excerpt");
+
+  if (!description) {
     return null;
   }
 
@@ -272,20 +293,24 @@ function normalizeStory(id: string, locale: Locale, source: Record<string, unkno
     language: locale,
     title,
     description,
-    coverImage: typeof localized.coverImage === "string" ? localized.coverImage : "/covers/ramayana.svg",
-    totalEpisodes: typeof localized.totalEpisodes === "number" ? localized.totalEpisodes : 1,
-    genre: typeof localized.genre === "string" ? localized.genre : "Story",
-    quote: typeof localized.quote === "string" ? localized.quote : "",
-    featureImage: typeof localized.featureImage === "string" ? localized.featureImage : "/art/ramayana-hall.svg"
+    coverImage: getTextValue(localized, "coverImage", "cover", "coverUrl", "thumbnail") ?? "/covers/ramayana.svg",
+    totalEpisodes: typeof localized.totalEpisodes === "number" ? localized.totalEpisodes : typeof localized.episodeCount === "number" ? localized.episodeCount : 0,
+    genre: getTextValue(localized, "genre", "category") ?? "Story",
+    quote: getTextValue(localized, "quote", "tagline", "excerpt") ?? description,
+    featureImage: getTextValue(localized, "featureImage", "featuredImage", "heroImage", "bannerImage") ?? getTextValue(localized, "coverImage", "cover", "coverUrl", "thumbnail") ?? "/art/ramayana-hall.svg"
   };
 }
 
 function normalizeEpisode(storyId: string, locale: Locale, source: Record<string, unknown>, fallbackIndex: number): Episode | null {
-  const localized = getLocalizedFields<EpisodeFields>(source as Partial<EpisodeFields> & LocalizedFields<EpisodeFields>, locale);
-  const episodeNumber = typeof localized.episodeNumber === "number" ? localized.episodeNumber : fallbackIndex + 1;
-  const title = typeof localized.title === "string" ? localized.title : `${partLabel[locale]} ${episodeNumber}`;
-  const rawContent = localized.content;
-  const content = Array.isArray(rawContent) ? rawContent.filter((item): item is string => typeof item === "string") : [];
+  const localized = getLocalizedFields<EpisodeFields>(source as Partial<EpisodeFields> & LocalizedFields<EpisodeFields>, locale) as Record<string, unknown>;
+  const episodeNumber = typeof localized.episodeNumber === "number" ? localized.episodeNumber : typeof localized.order === "number" ? localized.order : fallbackIndex + 1;
+  const title = getTextValue(localized, "title", "name", "label") ?? `${partLabel[locale]} ${episodeNumber}`;
+  const rawContent = localized.content ?? localized.paragraphs ?? localized.body;
+  const content = Array.isArray(rawContent)
+    ? rawContent.filter((item): item is string => typeof item === "string")
+    : typeof rawContent === "string"
+      ? rawContent.split(/\n\n+/).filter(Boolean)
+      : [];
 
   if (!content.length) {
     return null;
@@ -297,7 +322,7 @@ function normalizeEpisode(storyId: string, locale: Locale, source: Record<string
     episodeNumber,
     title,
     content,
-    aiImage: typeof localized.aiImage === "string" ? localized.aiImage : "/art/ramayana-hall.svg"
+    aiImage: getTextValue(localized, "aiImage", "image", "imageUrl", "coverImage") ?? "/art/ramayana-hall.svg"
   };
 }
 
@@ -321,13 +346,31 @@ function getDocumentId(name: string): string {
 async function fetchFirestoreStories(locale: Locale): Promise<Story[]> {
   const documents = await fetchFirestoreDocuments("stories");
 
-  return documents
-    .map((document) => {
+  const entries = await Promise.all(
+    documents.map(async (document) => {
       const parsed = parseFirestoreDocument(document);
       const order = typeof parsed.order === "number" ? parsed.order : Number.MAX_SAFE_INTEGER;
-      const story = normalizeStory(getDocumentId(document.name), locale, parsed);
-      return story ? {order, story} : null;
+      const storyId = getDocumentId(document.name);
+      const story = normalizeStory(storyId, locale, parsed);
+
+      if (!story) {
+        return null;
+      }
+
+      if (story.totalEpisodes > 0) {
+        return {order, story};
+      }
+
+      try {
+        const episodes = await fetchFirestoreEpisodes(locale, storyId);
+        return {order, story: {...story, totalEpisodes: episodes.length}};
+      } catch {
+        return {order, story: {...story, totalEpisodes: 1}};
+      }
     })
+  );
+
+  return entries
     .filter((entry): entry is {order: number; story: Story} => entry !== null)
     .sort((left, right) => left.order - right.order)
     .map((entry) => entry.story);
