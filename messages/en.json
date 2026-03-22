@@ -46,7 +46,16 @@
     "closeEpisodes": "Close episodes drawer",
     "readingProgress": "Reading progress",
     "previousEpisode": "Previous episode",
-    "nextEpisode": "Next episode"
+    "nextEpisode": "Next episode",
+    "fullscreen": "Fullscreen book view",
+    "closeFullscreen": "Close fullscreen book view",
+    "audioHeading": "Episode narration",
+    "playAudio": "Play audio",
+    "pauseAudio": "Pause audio",
+    "audioAvailable": "Playing the episode from the uploaded audio source.",
+    "audioFallback": "No uploaded audio found, so your browser voice will narrate the episode.",
+    "audioUnavailable": "Audio narration is not available on this device.",
+    "pageHint": "Tap, click, or swipe to turn pages like a book."
   },
   "Footer": {
     "tagline": "Classic literature atmosphere meets modern AI storytelling.",

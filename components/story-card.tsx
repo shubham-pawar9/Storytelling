@@ -1,7 +1,7 @@
-import Image from 'next/image';
 import Link from 'next/link';
 import {getTranslations} from 'next-intl/server';
 import type {Story} from '@/data/stories';
+import {StoryImage} from './story-image';
 
 export async function StoryCard({story, locale}: {story: Story; locale: string}) {
   const t = await getTranslations('Library');
@@ -9,7 +9,7 @@ export async function StoryCard({story, locale}: {story: Story; locale: string})
   return (
     <article className="group paper-panel flex h-full flex-col overflow-hidden transition duration-300 hover:-translate-y-2">
       <div className="relative aspect-[4/5] overflow-hidden border-b border-border">
-        <Image src={story.coverImage} alt={story.title} fill className="object-cover transition duration-500 group-hover:scale-105" />
+        <StoryImage src={story.coverImage} alt={story.title} fill className="object-cover transition duration-500 group-hover:scale-105" sizes="(max-width: 1024px) 100vw, 30vw" />
       </div>
       <div className="flex flex-1 flex-col gap-4 p-5">
         <div className="flex items-start justify-between gap-4">
