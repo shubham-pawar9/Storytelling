@@ -1,6 +1,6 @@
 'use client';
 
-import {LoaderCircle, Pause, Play, SkipBack, SkipForward, Volume2} from 'lucide-react';
+import {Pause, Play, SkipBack, SkipForward, Volume2} from 'lucide-react';
 import {
   forwardRef,
   useCallback,
@@ -13,13 +13,45 @@ import {
 import type {Episode} from '@/data/stories';
 import type {Locale} from '@/i18n/config';
 
-const speechLanguages: Record<Locale, string[]> = {
-  en: ['en-US', 'en-GB', 'en'],
-  hi: ['hi-IN', 'hi', 'en-IN', 'en-US'],
-  mr: ['mr-IN', 'mr', 'hi-IN', 'hi', 'en-IN', 'en-US']
+type VoiceProfile = {
+  rate: number;
+  pitch: number;
+  preferredNames?: string[];
 };
 
-type NarrationSource = 'uploaded' | 'elevenlabs' | 'browser';
+type SpeechLocaleConfig = {
+  languages: string[];
+  profiles: VoiceProfile[];
+};
+
+const speechConfig: Record<Locale, SpeechLocaleConfig> = {
+  en: {
+    languages: ['en-US', 'en-GB', 'en'],
+    profiles: [
+      {rate: 1, pitch: 1.15, preferredNames: ['Google', 'Samantha', 'Microsoft', 'Natural']},
+      {rate: 0.96, pitch: 1.05, preferredNames: ['Google', 'Aria', 'Jenny', 'Female']},
+      {rate: 1.04, pitch: 1.22, preferredNames: ['Google', 'Neural', 'Guy', 'Male']}
+    ]
+  },
+  hi: {
+    languages: ['hi-IN', 'hi', 'en-IN', 'en-US'],
+    profiles: [
+      {rate: 0.92, pitch: 1.08, preferredNames: ['Google', 'Swara', 'Female', 'Microsoft']},
+      {rate: 0.96, pitch: 1, preferredNames: ['Google', 'Madhur', 'Male', 'Natural']},
+      {rate: 0.9, pitch: 1.14, preferredNames: ['Google', 'India', 'Hindi']}
+    ]
+  },
+  mr: {
+    languages: ['mr-IN', 'mr', 'hi-IN', 'hi', 'en-IN', 'en-US'],
+    profiles: [
+      {rate: 0.9, pitch: 1.1, preferredNames: ['Google', 'India', 'Female', 'Microsoft']},
+      {rate: 0.94, pitch: 1.02, preferredNames: ['Google', 'Natural', 'Male']},
+      {rate: 0.88, pitch: 1.16, preferredNames: ['Google', 'Hindi', 'Marathi']}
+    ]
+  }
+};
+
+type NarrationSource = 'uploaded' | 'browser';
 type PlayerVariant = 'default' | 'fullscreen';
 type BrowserPlaybackState = 'idle' | 'playing' | 'paused';
 
@@ -71,35 +103,6 @@ function formatTime(seconds: number) {
   return `${minutes}:${remainingSeconds}`;
 }
 
-function getBestVoice(locale: Locale) {
-  if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
-    return null;
-  }
-
-  const voices = window.speechSynthesis.getVoices();
-  if (!voices.length) {
-    return null;
-  }
-
-  const preferredLanguages = speechLanguages[locale];
-
-  for (const language of preferredLanguages) {
-    const exactVoice = voices.find((voice) => voice.lang.toLowerCase() === language.toLowerCase());
-    if (exactVoice) {
-      return exactVoice;
-    }
-  }
-
-  for (const language of preferredLanguages) {
-    const matchingVoice = voices.find((voice) => voice.lang.toLowerCase().startsWith(language.toLowerCase().split('-')[0]));
-    if (matchingVoice) {
-      return matchingVoice;
-    }
-  }
-
-  return voices.find((voice) => voice.default) ?? voices[0] ?? null;
-}
-
 function getParagraphUnits(paragraph: string) {
   const normalized = paragraph.trim();
   if (!normalized) {
@@ -126,6 +129,42 @@ function buildParagraphRanges(paragraphs: string[], duration: number) {
   });
 }
 
+function getVoiceCandidates(locale: Locale, preferredNames: string[]) {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+    return [] as SpeechSynthesisVoice[];
+  }
+
+  const voices = window.speechSynthesis.getVoices();
+  const {languages} = speechConfig[locale];
+  const normalizedLanguages = languages.map((language) => language.toLowerCase());
+  const normalizedPreferredNames = preferredNames.map((name) => name.toLowerCase());
+
+  const matchingVoices = voices.filter((voice) => {
+    const voiceLanguage = voice.lang.toLowerCase();
+    return normalizedLanguages.some((language) => {
+      const languageRoot = language.split('-')[0];
+      return voiceLanguage === language || voiceLanguage.startsWith(`${languageRoot}-`) || voiceLanguage === languageRoot;
+    });
+  });
+
+  return matchingVoices.sort((left, right) => {
+    const leftName = left.name.toLowerCase();
+    const rightName = right.name.toLowerCase();
+    const leftScore = normalizedPreferredNames.reduce((score, token, index) => score + (leftName.includes(token) ? normalizedPreferredNames.length - index : 0), 0);
+    const rightScore = normalizedPreferredNames.reduce((score, token, index) => score + (rightName.includes(token) ? normalizedPreferredNames.length - index : 0), 0);
+
+    if (leftScore !== rightScore) {
+      return rightScore - leftScore;
+    }
+
+    if (left.default !== right.default) {
+      return left.default ? -1 : 1;
+    }
+
+    return left.name.localeCompare(right.name);
+  });
+}
+
 export const EpisodeAudioPlayer = forwardRef<EpisodeAudioPlayerHandle, EpisodeAudioPlayerProps>(function EpisodeAudioPlayer(
   {
     episode,
@@ -141,14 +180,13 @@ export const EpisodeAudioPlayer = forwardRef<EpisodeAudioPlayerHandle, EpisodeAu
   ref
 ) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const generatedAudioUrlRef = useRef<string | null>(null);
   const browserPlaybackStateRef = useRef<BrowserPlaybackState>('idle');
+  const voiceCycleRef = useRef(0);
+  const profileCycleRef = useRef(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [speechSupported, setSpeechSupported] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [elevenLabsUnavailable, setElevenLabsUnavailable] = useState(false);
   const [narrationSource, setNarrationSource] = useState<NarrationSource | null>(episode.audioUrl ? 'uploaded' : null);
   const textNarration = useMemo(() => episode.content.join(' '), [episode.content]);
   const hasUploadedAudio = Boolean(episode.audioUrl);
@@ -166,6 +204,7 @@ export const EpisodeAudioPlayer = forwardRef<EpisodeAudioPlayerHandle, EpisodeAu
     };
 
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      handleVoicesChanged();
       window.speechSynthesis.addEventListener('voiceschanged', handleVoicesChanged);
     }
 
@@ -173,11 +212,6 @@ export const EpisodeAudioPlayer = forwardRef<EpisodeAudioPlayerHandle, EpisodeAu
 
     return () => {
       audioElement?.pause();
-
-      if (generatedAudioUrlRef.current) {
-        URL.revokeObjectURL(generatedAudioUrlRef.current);
-        generatedAudioUrlRef.current = null;
-      }
 
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
         window.speechSynthesis.cancel();
@@ -195,22 +229,19 @@ export const EpisodeAudioPlayer = forwardRef<EpisodeAudioPlayerHandle, EpisodeAu
       audioRef.current.pause();
     }
 
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      if (browserPlaybackStateRef.current === 'playing') {
-        window.speechSynthesis.pause();
-        browserPlaybackStateRef.current = 'paused';
-      }
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window && browserPlaybackStateRef.current !== 'idle') {
+      window.speechSynthesis.cancel();
+      browserPlaybackStateRef.current = 'idle';
+      updateActiveParagraph(null);
     }
 
     setIsPlaying(false);
-  }, []);
+  }, [updateActiveParagraph]);
 
   useEffect(() => {
     setIsPlaying(false);
-    setIsLoading(false);
     setCurrentTime(0);
     setDuration(0);
-    setElevenLabsUnavailable(false);
     setNarrationSource(episode.audioUrl ? 'uploaded' : null);
     browserPlaybackStateRef.current = 'idle';
     updateActiveParagraph(null);
@@ -220,11 +251,6 @@ export const EpisodeAudioPlayer = forwardRef<EpisodeAudioPlayerHandle, EpisodeAu
       audioRef.current.currentTime = 0;
       audioRef.current.removeAttribute('src');
       audioRef.current.load();
-    }
-
-    if (generatedAudioUrlRef.current) {
-      URL.revokeObjectURL(generatedAudioUrlRef.current);
-      generatedAudioUrlRef.current = null;
     }
 
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -255,30 +281,37 @@ export const EpisodeAudioPlayer = forwardRef<EpisodeAudioPlayerHandle, EpisodeAu
       return false;
     }
 
-    if (browserPlaybackStateRef.current === 'paused' && window.speechSynthesis.paused) {
-      window.speechSynthesis.resume();
-      browserPlaybackStateRef.current = 'playing';
-      setNarrationSource('browser');
-      setIsPlaying(true);
-      return true;
-    }
-
     window.speechSynthesis.cancel();
 
-    const voice = getBestVoice(locale);
+    const {profiles, languages} = speechConfig[locale];
+    const profile = profiles[profileCycleRef.current % profiles.length];
+    profileCycleRef.current += 1;
+
+    const voiceCandidates = getVoiceCandidates(locale, profile.preferredNames ?? []);
+    const selectedVoice = voiceCandidates[voiceCycleRef.current % Math.max(voiceCandidates.length, 1)] ?? null;
+    if (voiceCandidates.length > 0) {
+      voiceCycleRef.current += 1;
+    }
+
     const utterances = episode.content
       .map((paragraph, index) => ({paragraph: paragraph.trim(), index}))
       .filter(({paragraph}) => Boolean(paragraph))
       .map(({paragraph, index}, utteranceIndex, utteranceList) => {
         const utterance = new SpeechSynthesisUtterance(paragraph);
-        utterance.lang = voice?.lang ?? speechLanguages[locale][0];
-        if (voice) {
-          utterance.voice = voice;
+        utterance.lang = selectedVoice?.lang ?? languages[0];
+        utterance.rate = profile.rate;
+        utterance.pitch = profile.pitch;
+        utterance.volume = 1;
+
+        if (selectedVoice) {
+          utterance.voice = selectedVoice;
         }
 
         utterance.onstart = () => {
           browserPlaybackStateRef.current = 'playing';
           setNarrationSource('browser');
+          setDuration(utteranceList.length);
+          setCurrentTime(utteranceIndex);
           setIsPlaying(true);
           updateActiveParagraph(index);
         };
@@ -293,6 +326,7 @@ export const EpisodeAudioPlayer = forwardRef<EpisodeAudioPlayerHandle, EpisodeAu
         };
         utterance.onend = () => {
           const isLastParagraph = utteranceIndex === utteranceList.length - 1;
+          setCurrentTime(utteranceIndex + 1);
           if (isLastParagraph) {
             browserPlaybackStateRef.current = 'idle';
             setIsPlaying(false);
@@ -336,91 +370,26 @@ export const EpisodeAudioPlayer = forwardRef<EpisodeAudioPlayerHandle, EpisodeAu
     }
   }, []);
 
-  const loadGeneratedAudio = useCallback(async () => {
-    if (!textNarration.trim()) {
-      return false;
-    }
-
-    setIsLoading(true);
-    setElevenLabsUnavailable(false);
-
-    try {
-      const response = await fetch('/api/elevenlabs', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          locale,
-          text: textNarration
-        })
-      });
-
-      if (!response.ok || !response.headers.get('content-type')?.includes('audio')) {
-        setElevenLabsUnavailable(true);
-        return false;
-      }
-
-      const audioBlob = await response.blob();
-      const objectUrl = URL.createObjectURL(audioBlob);
-
-      if (generatedAudioUrlRef.current) {
-        URL.revokeObjectURL(generatedAudioUrlRef.current);
-      }
-
-      generatedAudioUrlRef.current = objectUrl;
-      return await playAudioElement(objectUrl, 'elevenlabs');
-    } catch {
-      setElevenLabsUnavailable(true);
-      return false;
-    } finally {
-      setIsLoading(false);
-    }
-  }, [locale, playAudioElement, textNarration]);
-
   const startPlayback = useCallback(async () => {
-    if (isLoading) {
-      return;
-    }
-
-    if (browserPlaybackStateRef.current === 'paused' && typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.resume();
-      browserPlaybackStateRef.current = 'playing';
-      setNarrationSource('browser');
-      setIsPlaying(true);
-      return;
-    }
-
-    if ((hasUploadedAudio || narrationSource === 'elevenlabs') && audioRef.current) {
-      const activeSource = hasUploadedAudio ? episode.audioUrl : generatedAudioUrlRef.current;
+    if ((hasUploadedAudio || narrationSource === 'uploaded') && audioRef.current) {
+      const activeSource = episode.audioUrl;
       if (activeSource) {
-        await playAudioElement(activeSource, hasUploadedAudio ? 'uploaded' : 'elevenlabs');
+        await playAudioElement(activeSource, 'uploaded');
       }
       return;
-    }
-
-    if (!hasUploadedAudio) {
-      const generatedAudioStarted = await loadGeneratedAudio();
-      if (generatedAudioStarted) {
-        return;
-      }
     }
 
     startSpeechNarration();
-  }, [episode.audioUrl, hasUploadedAudio, isLoading, loadGeneratedAudio, narrationSource, playAudioElement, startSpeechNarration]);
+  }, [episode.audioUrl, hasUploadedAudio, narrationSource, playAudioElement, startSpeechNarration]);
 
   const handleToggle = useCallback(async () => {
-    if (isLoading) {
-      return;
-    }
-
     if (isPlaying) {
       pausePlayback();
       return;
     }
 
     await startPlayback();
-  }, [isLoading, isPlaying, pausePlayback, startPlayback]);
+  }, [isPlaying, pausePlayback, startPlayback]);
 
   useImperativeHandle(ref, () => ({
     toggle: handleToggle,
@@ -435,22 +404,14 @@ export const EpisodeAudioPlayer = forwardRef<EpisodeAudioPlayerHandle, EpisodeAu
     void startPlayback();
   }, [autoPlay, episode.id, startPlayback]);
 
-  const isUnavailable = !hasUploadedAudio && !speechSupported && !textNarration.trim();
-  const statusText = isLoading
-    ? labels.audioLoading
-    : hasUploadedAudio || narrationSource === 'uploaded'
-      ? labels.audioAvailable
-      : narrationSource === 'elevenlabs'
-        ? labels.audioEnhanced
-        : narrationSource === 'browser' || elevenLabsUnavailable
-          ? speechSupported
-            ? labels.audioFallback
-            : labels.audioUnavailable
-          : textNarration.trim()
-            ? labels.audioEnhanced
-            : labels.audioUnavailable;
+  const isUnavailable = !hasUploadedAudio && (!speechSupported || !textNarration.trim());
+  const statusText = hasUploadedAudio || narrationSource === 'uploaded'
+    ? labels.audioAvailable
+    : speechSupported
+      ? labels.audioFallback
+      : labels.audioUnavailable;
 
-  const showProgress = (hasUploadedAudio || narrationSource === 'elevenlabs') && variant === 'default';
+  const showProgress = hasUploadedAudio && variant === 'default';
 
   return (
     <>
@@ -478,10 +439,10 @@ export const EpisodeAudioPlayer = forwardRef<EpisodeAudioPlayerHandle, EpisodeAu
                 onClick={() => {
                   void handleToggle();
                 }}
-                disabled={isUnavailable || isLoading}
+                disabled={isUnavailable}
                 className="inline-flex items-center justify-center gap-2 rounded-full bg-primary px-5 py-3 text-sm font-semibold uppercase tracking-[0.2em] text-white transition disabled:cursor-not-allowed disabled:opacity-50 dark:text-stone-950"
               >
-                {isLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
                 {isPlaying ? labels.pause : labels.play}
               </button>
               {navigation ? (
@@ -533,10 +494,10 @@ export const EpisodeAudioPlayer = forwardRef<EpisodeAudioPlayerHandle, EpisodeAu
               onClick={() => {
                 void handleToggle();
               }}
-              disabled={isUnavailable || isLoading}
+              disabled={isUnavailable}
               className="inline-flex h-16 w-16 items-center justify-center rounded-full bg-primary text-white shadow-paper transition hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-60 dark:text-stone-950"
             >
-              {isLoading ? <LoaderCircle className="h-7 w-7 animate-spin" /> : isPlaying ? <Pause className="h-7 w-7" /> : <Play className="h-7 w-7 translate-x-0.5" />}
+              {isPlaying ? <Pause className="h-7 w-7" /> : <Play className="h-7 w-7 translate-x-0.5" />}
             </button>
             {navigation ? (
               <button
