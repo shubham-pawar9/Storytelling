@@ -1,6 +1,6 @@
 'use client';
 
-import {LoaderCircle, Pause, Play, Volume2} from 'lucide-react';
+import {LoaderCircle, Pause, Play, SkipBack, SkipForward, Volume2} from 'lucide-react';
 import {
   forwardRef,
   useCallback,
@@ -21,6 +21,16 @@ const speechLanguages: Record<Locale, string[]> = {
 
 type NarrationSource = 'uploaded' | 'elevenlabs' | 'browser';
 type PlayerVariant = 'default' | 'fullscreen';
+type BrowserPlaybackState = 'idle' | 'playing' | 'paused';
+
+type PlayerNavigation = {
+  previousLabel: string;
+  nextLabel: string;
+  onPrevious: () => void;
+  onNext: () => void;
+  disablePrevious?: boolean;
+  disableNext?: boolean;
+};
 
 type EpisodeAudioPlayerProps = {
   episode: Episode;
@@ -39,6 +49,8 @@ type EpisodeAudioPlayerProps = {
   autoPlay?: boolean;
   onEnded?: () => void;
   onPlaybackStateChange?: (playing: boolean) => void;
+  onActiveParagraphChange?: (index: number | null) => void;
+  navigation?: PlayerNavigation;
 };
 
 export type EpisodeAudioPlayerHandle = {
@@ -88,6 +100,32 @@ function getBestVoice(locale: Locale) {
   return voices.find((voice) => voice.default) ?? voices[0] ?? null;
 }
 
+function getParagraphUnits(paragraph: string) {
+  const normalized = paragraph.trim();
+  if (!normalized) {
+    return 1;
+  }
+
+  return Math.max(normalized.split(/\s+/).length, normalized.length / 12, 1);
+}
+
+function buildParagraphRanges(paragraphs: string[], duration: number) {
+  if (!duration || duration <= 0 || !paragraphs.length) {
+    return [] as Array<{start: number; end: number}>;
+  }
+
+  const totalUnits = paragraphs.reduce((sum, paragraph) => sum + getParagraphUnits(paragraph), 0);
+  let cursor = 0;
+
+  return paragraphs.map((paragraph, index) => {
+    const slice = (getParagraphUnits(paragraph) / totalUnits) * duration;
+    const start = cursor;
+    const end = index === paragraphs.length - 1 ? duration : cursor + slice;
+    cursor = end;
+    return {start, end};
+  });
+}
+
 export const EpisodeAudioPlayer = forwardRef<EpisodeAudioPlayerHandle, EpisodeAudioPlayerProps>(function EpisodeAudioPlayer(
   {
     episode,
@@ -96,12 +134,15 @@ export const EpisodeAudioPlayer = forwardRef<EpisodeAudioPlayerHandle, EpisodeAu
     variant = 'default',
     autoPlay = false,
     onEnded,
-    onPlaybackStateChange
+    onPlaybackStateChange,
+    onActiveParagraphChange,
+    navigation
   },
   ref
 ) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const generatedAudioUrlRef = useRef<string | null>(null);
+  const browserPlaybackStateRef = useRef<BrowserPlaybackState>('idle');
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
@@ -111,6 +152,11 @@ export const EpisodeAudioPlayer = forwardRef<EpisodeAudioPlayerHandle, EpisodeAu
   const [narrationSource, setNarrationSource] = useState<NarrationSource | null>(episode.audioUrl ? 'uploaded' : null);
   const textNarration = useMemo(() => episode.content.join(' '), [episode.content]);
   const hasUploadedAudio = Boolean(episode.audioUrl);
+  const paragraphRanges = useMemo(() => buildParagraphRanges(episode.content, duration), [duration, episode.content]);
+
+  const updateActiveParagraph = useCallback((index: number | null) => {
+    onActiveParagraphChange?.(index);
+  }, [onActiveParagraphChange]);
 
   useEffect(() => {
     setSpeechSupported(typeof window !== 'undefined' && 'speechSynthesis' in window);
@@ -150,7 +196,10 @@ export const EpisodeAudioPlayer = forwardRef<EpisodeAudioPlayerHandle, EpisodeAu
     }
 
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
+      if (browserPlaybackStateRef.current === 'playing') {
+        window.speechSynthesis.pause();
+        browserPlaybackStateRef.current = 'paused';
+      }
     }
 
     setIsPlaying(false);
@@ -163,6 +212,8 @@ export const EpisodeAudioPlayer = forwardRef<EpisodeAudioPlayerHandle, EpisodeAu
     setDuration(0);
     setElevenLabsUnavailable(false);
     setNarrationSource(episode.audioUrl ? 'uploaded' : null);
+    browserPlaybackStateRef.current = 'idle';
+    updateActiveParagraph(null);
 
     if (audioRef.current) {
       audioRef.current.pause();
@@ -179,34 +230,91 @@ export const EpisodeAudioPlayer = forwardRef<EpisodeAudioPlayerHandle, EpisodeAu
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
-  }, [episode.audioUrl, episode.id]);
+  }, [episode.audioUrl, episode.id, updateActiveParagraph]);
+
+  useEffect(() => {
+    if (!paragraphRanges.length || narrationSource === 'browser') {
+      return;
+    }
+
+    if (!isPlaying && currentTime === 0) {
+      updateActiveParagraph(null);
+      return;
+    }
+
+    const nextIndex = paragraphRanges.findIndex(({start, end}, index) => {
+      const isLast = index === paragraphRanges.length - 1;
+      return currentTime >= start && (isLast ? currentTime <= end : currentTime < end);
+    });
+
+    updateActiveParagraph(nextIndex >= 0 ? nextIndex : null);
+  }, [currentTime, isPlaying, narrationSource, paragraphRanges, updateActiveParagraph]);
 
   const startSpeechNarration = useCallback(() => {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window) || !textNarration.trim()) {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window) || !episode.content.length) {
       return false;
     }
 
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(textNarration);
-    const voice = getBestVoice(locale);
-
-    utterance.lang = voice?.lang ?? speechLanguages[locale][0];
-    if (voice) {
-      utterance.voice = voice;
-    }
-
-    utterance.onstart = () => {
+    if (browserPlaybackStateRef.current === 'paused' && window.speechSynthesis.paused) {
+      window.speechSynthesis.resume();
+      browserPlaybackStateRef.current = 'playing';
       setNarrationSource('browser');
       setIsPlaying(true);
-    };
-    utterance.onend = () => {
-      setIsPlaying(false);
-      onEnded?.();
-    };
-    utterance.onerror = () => setIsPlaying(false);
-    window.speechSynthesis.speak(utterance);
+      return true;
+    }
+
+    window.speechSynthesis.cancel();
+
+    const voice = getBestVoice(locale);
+    const utterances = episode.content
+      .map((paragraph, index) => ({paragraph: paragraph.trim(), index}))
+      .filter(({paragraph}) => Boolean(paragraph))
+      .map(({paragraph, index}, utteranceIndex, utteranceList) => {
+        const utterance = new SpeechSynthesisUtterance(paragraph);
+        utterance.lang = voice?.lang ?? speechLanguages[locale][0];
+        if (voice) {
+          utterance.voice = voice;
+        }
+
+        utterance.onstart = () => {
+          browserPlaybackStateRef.current = 'playing';
+          setNarrationSource('browser');
+          setIsPlaying(true);
+          updateActiveParagraph(index);
+        };
+        utterance.onpause = () => {
+          browserPlaybackStateRef.current = 'paused';
+          setIsPlaying(false);
+        };
+        utterance.onresume = () => {
+          browserPlaybackStateRef.current = 'playing';
+          setIsPlaying(true);
+          updateActiveParagraph(index);
+        };
+        utterance.onend = () => {
+          const isLastParagraph = utteranceIndex === utteranceList.length - 1;
+          if (isLastParagraph) {
+            browserPlaybackStateRef.current = 'idle';
+            setIsPlaying(false);
+            updateActiveParagraph(null);
+            onEnded?.();
+          }
+        };
+        utterance.onerror = () => {
+          browserPlaybackStateRef.current = 'idle';
+          setIsPlaying(false);
+          updateActiveParagraph(null);
+        };
+        return utterance;
+      });
+
+    if (!utterances.length) {
+      return false;
+    }
+
+    utterances.forEach((utterance) => window.speechSynthesis.speak(utterance));
     return true;
-  }, [locale, onEnded, textNarration]);
+  }, [episode.content, locale, onEnded, updateActiveParagraph]);
 
   const playAudioElement = useCallback(async (src: string, source: NarrationSource) => {
     if (!audioRef.current) {
@@ -272,6 +380,14 @@ export const EpisodeAudioPlayer = forwardRef<EpisodeAudioPlayerHandle, EpisodeAu
 
   const startPlayback = useCallback(async () => {
     if (isLoading) {
+      return;
+    }
+
+    if (browserPlaybackStateRef.current === 'paused' && typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.resume();
+      browserPlaybackStateRef.current = 'playing';
+      setNarrationSource('browser');
+      setIsPlaying(true);
       return;
     }
 
@@ -345,17 +461,41 @@ export const EpisodeAudioPlayer = forwardRef<EpisodeAudioPlayerHandle, EpisodeAu
               <p className="text-sm uppercase tracking-[0.3em] text-primary">{labels.heading}</p>
               <p className="mt-2 text-sm text-muted">{statusText}</p>
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                void handleToggle();
-              }}
-              disabled={isUnavailable || isLoading}
-              className="inline-flex items-center justify-center gap-2 rounded-full bg-primary px-5 py-3 text-sm font-semibold uppercase tracking-[0.2em] text-white transition disabled:cursor-not-allowed disabled:opacity-50 dark:text-stone-950"
-            >
-              {isLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-              {isPlaying ? labels.pause : labels.play}
-            </button>
+            <div className="flex items-center gap-3 self-start sm:self-auto">
+              {navigation ? (
+                <button
+                  type="button"
+                  aria-label={navigation.previousLabel}
+                  onClick={navigation.onPrevious}
+                  disabled={navigation.disablePrevious}
+                  className="inline-flex h-12 w-12 items-center justify-center rounded-full border border-border bg-background text-foreground transition hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <SkipBack className="h-4 w-4" />
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => {
+                  void handleToggle();
+                }}
+                disabled={isUnavailable || isLoading}
+                className="inline-flex items-center justify-center gap-2 rounded-full bg-primary px-5 py-3 text-sm font-semibold uppercase tracking-[0.2em] text-white transition disabled:cursor-not-allowed disabled:opacity-50 dark:text-stone-950"
+              >
+                {isLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                {isPlaying ? labels.pause : labels.play}
+              </button>
+              {navigation ? (
+                <button
+                  type="button"
+                  aria-label={navigation.nextLabel}
+                  onClick={navigation.onNext}
+                  disabled={navigation.disableNext}
+                  className="inline-flex h-12 w-12 items-center justify-center rounded-full border border-border bg-background text-foreground transition hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <SkipForward className="h-4 w-4" />
+                </button>
+              ) : null}
+            </div>
           </div>
 
           {showProgress ? (
@@ -375,17 +515,41 @@ export const EpisodeAudioPlayer = forwardRef<EpisodeAudioPlayerHandle, EpisodeAu
         </section>
       ) : (
         <div className="pointer-events-none absolute inset-x-0 bottom-8 z-30 flex justify-center px-4">
-          <button
-            type="button"
-            aria-label={isPlaying ? labels.pause : labels.play}
-            onClick={() => {
-              void handleToggle();
-            }}
-            disabled={isUnavailable || isLoading}
-            className="pointer-events-auto inline-flex h-16 w-16 items-center justify-center rounded-full bg-primary text-white shadow-paper transition hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-60 dark:text-stone-950"
-          >
-            {isLoading ? <LoaderCircle className="h-7 w-7 animate-spin" /> : isPlaying ? <Pause className="h-7 w-7" /> : <Play className="h-7 w-7 translate-x-0.5" />}
-          </button>
+          <div className="pointer-events-auto flex items-center gap-4 rounded-full bg-background/88 px-4 py-3 shadow-paper backdrop-blur">
+            {navigation ? (
+              <button
+                type="button"
+                aria-label={navigation.previousLabel}
+                onClick={navigation.onPrevious}
+                disabled={navigation.disablePrevious}
+                className="inline-flex h-12 w-12 items-center justify-center rounded-full border border-border bg-background text-foreground transition hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <SkipBack className="h-5 w-5" />
+              </button>
+            ) : null}
+            <button
+              type="button"
+              aria-label={isPlaying ? labels.pause : labels.play}
+              onClick={() => {
+                void handleToggle();
+              }}
+              disabled={isUnavailable || isLoading}
+              className="inline-flex h-16 w-16 items-center justify-center rounded-full bg-primary text-white shadow-paper transition hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-60 dark:text-stone-950"
+            >
+              {isLoading ? <LoaderCircle className="h-7 w-7 animate-spin" /> : isPlaying ? <Pause className="h-7 w-7" /> : <Play className="h-7 w-7 translate-x-0.5" />}
+            </button>
+            {navigation ? (
+              <button
+                type="button"
+                aria-label={navigation.nextLabel}
+                onClick={navigation.onNext}
+                disabled={navigation.disableNext}
+                className="inline-flex h-12 w-12 items-center justify-center rounded-full border border-border bg-background text-foreground transition hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <SkipForward className="h-5 w-5" />
+              </button>
+            ) : null}
+          </div>
           <span className="sr-only">{statusText}</span>
         </div>
       )}
@@ -399,7 +563,9 @@ export const EpisodeAudioPlayer = forwardRef<EpisodeAudioPlayerHandle, EpisodeAu
         onPause={() => setIsPlaying(false)}
         onPlay={() => setIsPlaying(true)}
         onEnded={() => {
+          setCurrentTime(duration);
           setIsPlaying(false);
+          updateActiveParagraph(null);
           onEnded?.();
         }}
         className="hidden"
