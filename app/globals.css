@@ -64,15 +64,28 @@ body::before {
 
 
 .reader-book {
-  perspective: 1600px;
+  perspective: 2200px;
 }
 
-.reader-page {
-  transform-style: preserve-3d;
-  background-image:
-    linear-gradient(90deg, rgba(139, 30, 30, 0.08), transparent 12%),
-    linear-gradient(0deg, rgba(255,255,255,0.32), rgba(255,255,255,0.08));
+.reader-spread {
   box-shadow:
-    inset 0 0 0 1px rgba(112, 78, 51, 0.08),
-    0 20px 60px rgba(42, 31, 26, 0.12);
+    0 18px 80px rgba(42, 31, 26, 0.18),
+    inset 0 0 0 1px rgba(112, 78, 51, 0.08);
+}
+
+.reader-sheet {
+  background-image:
+    linear-gradient(180deg, rgba(255,255,255,0.32), rgba(255,255,255,0.04)),
+    linear-gradient(90deg, rgba(139, 30, 30, 0.06), transparent 22%);
+}
+
+.reader-sheet + .reader-sheet {
+  border-left: 1px solid rgba(112, 78, 51, 0.28);
+  background-image:
+    linear-gradient(180deg, rgba(255,255,255,0.22), rgba(255,255,255,0.04)),
+    linear-gradient(270deg, rgba(139, 30, 30, 0.06), transparent 22%);
+}
+
+.book-scroll {
+  scrollbar-width: thin;
 }
