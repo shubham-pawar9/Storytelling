@@ -46,10 +46,12 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
   const [spreadIndex, setSpreadIndex] = useState(() => episodes.findIndex((entry) => entry.id === episode.id));
   const [direction, setDirection] = useState(1);
   const [isFullscreenAudioEnabled, setIsFullscreenAudioEnabled] = useState(false);
+  const [isFullscreenAudioPrimed, setIsFullscreenAudioPrimed] = useState(false);
   const [autoplayCountdown, setAutoplayCountdown] = useState<number | null>(null);
   const [activeReadingParagraph, setActiveReadingParagraph] = useState<number | null>(null);
   const [activeFullscreenParagraph, setActiveFullscreenParagraph] = useState<number | null>(null);
   const touchStartX = useRef<number | null>(null);
+  const isSwitchingSpreadRef = useRef(false);
 
   const stopAutoplayCountdown = useCallback(() => {
     if (countdownTimerRef.current) {
@@ -71,6 +73,7 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
 
   useEffect(() => {
     if (!isFullscreen) {
+      isSwitchingSpreadRef.current = false;
       return;
     }
 
@@ -106,12 +109,13 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
       return;
     }
 
+    isSwitchingSpreadRef.current = isFullscreenAudioPrimed;
     fullscreenAudioRef.current?.pause();
     setActiveFullscreenParagraph(null);
     stopAutoplayCountdown();
     setDirection(nextIndex > spreadIndex ? 1 : -1);
     setSpreadIndex(nextIndex);
-  }, [episodes.length, spreadIndex, stopAutoplayCountdown]);
+  }, [episodes.length, isFullscreenAudioPrimed, spreadIndex, stopAutoplayCountdown]);
 
   const handlePreviousEpisode = useCallback(() => {
     router.push(`/${locale}/stories/${storyId}/${previousEpisodeNumber}`);
@@ -125,6 +129,7 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
     fullscreenAudioRef.current?.pause();
     stopAutoplayCountdown();
     setIsFullscreenAudioEnabled(false);
+    setIsFullscreenAudioPrimed(false);
     setIsFullscreen(false);
     setActiveFullscreenParagraph(null);
 
@@ -136,9 +141,18 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
   const handleFullscreenPlaybackStateChange = useCallback((playing: boolean) => {
     setIsFullscreenAudioEnabled(playing);
 
-    if (!playing) {
-      stopAutoplayCountdown();
+    if (playing) {
+      setIsFullscreenAudioPrimed(true);
+      isSwitchingSpreadRef.current = false;
+      return;
     }
+
+    if (isSwitchingSpreadRef.current) {
+      return;
+    }
+
+    setIsFullscreenAudioPrimed(false);
+    stopAutoplayCountdown();
   }, [stopAutoplayCountdown]);
 
   const handleFullscreenEpisodeEnd = useCallback(() => {
@@ -172,6 +186,7 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
 
   useEffect(() => {
     if (!isFullscreen) {
+      isSwitchingSpreadRef.current = false;
       return;
     }
 
@@ -274,14 +289,14 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
               episode={currentSpread.left}
               locale={locale}
               variant="fullscreen"
-              autoPlay={isFullscreen && isFullscreenAudioEnabled && autoplayCountdown === null}
+              autoPlay={isFullscreen && isFullscreenAudioPrimed && autoplayCountdown === null}
               onEnded={handleFullscreenEpisodeEnd}
               onPlaybackStateChange={handleFullscreenPlaybackStateChange}
               onActiveParagraphChange={setActiveFullscreenParagraph}
               navigation={{
                 previousLabel: labels.previousEpisode,
                 nextLabel: labels.nextEpisode,
-                onPrevious: () => changeSpread(0),
+                onPrevious: () => changeSpread(spreadIndex - 1),
                 onNext: () => changeSpread(spreadIndex + 1),
                 disableNext: !canGoNext
               }}
