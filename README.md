@@ -13,7 +13,7 @@ If Firestore is empty or unavailable, the UI falls back to the local demo storie
 
 ## Supported story document shape
 
-Each story document in `stories` can keep shared fields at the top level and localized fields inside `translations`, `locales`, or direct locale keys (`en`, `hi`, `mr`).
+Each story document in `stories` can keep shared fields at the top level and localized fields inside `translations`, `locales`, `languages`, or direct locale keys (`en`, `hi`, `mr`).
 
 ```json
 {
@@ -46,7 +46,7 @@ Each story document in `stories` can keep shared fields at the top level and loc
 
 ## Supported episode document shape
 
-Each episode document inside `stories/{storyId}/episodes` supports the same localization pattern.
+Each episode document inside `stories/{storyId}/episodes` supports the same localization pattern. The loader also accepts alternate field names such as `name`, `summary`, `excerpt`, `image`, and string `body` content split into paragraphs.
 
 ```json
 {
@@ -68,3 +68,13 @@ Each episode document inside `stories/{storyId}/episodes` supports the same loca
   }
 }
 ```
+
+
+## Firebase config
+
+The server-side Firestore REST loader reads these environment variables when present:
+
+- `NEXT_PUBLIC_FIREBASE_API_KEY`
+- `NEXT_PUBLIC_FIREBASE_PROJECT_ID`
+
+If they are not set, the app falls back to the currently checked-in project values for `storytelling-2d8a4`.
