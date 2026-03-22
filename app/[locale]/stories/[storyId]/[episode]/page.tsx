@@ -14,8 +14,8 @@ export default async function StoryReaderPage({params}: {params: Promise<{storyI
   const t = await getTranslations('Reader');
   const {storyId, episode} = await params;
   const episodeNumber = Number(episode);
-  const storyRecord = getStory(locale, storyId);
-  const currentEpisodeRecord = getEpisode(locale, storyId, episodeNumber);
+  const storyRecord = await getStory(locale, storyId);
+  const currentEpisodeRecord = await getEpisode(locale, storyId, episodeNumber);
 
   if (!storyRecord || !currentEpisodeRecord) {
     notFound();
@@ -23,7 +23,7 @@ export default async function StoryReaderPage({params}: {params: Promise<{storyI
 
   const story = storyRecord;
   const currentEpisode = currentEpisodeRecord;
-  const episodes = getEpisodes(locale, storyId);
+  const episodes = await getEpisodes(locale, storyId);
   const progress = (currentEpisode.episodeNumber / story.totalEpisodes) * 100;
   const prevEpisode = currentEpisode.episodeNumber > 1 ? currentEpisode.episodeNumber - 1 : null;
   const nextEpisode = currentEpisode.episodeNumber < story.totalEpisodes ? currentEpisode.episodeNumber + 1 : null;
