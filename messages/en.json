@@ -53,9 +53,11 @@
     "playAudio": "Play audio",
     "pauseAudio": "Pause audio",
     "audioAvailable": "Playing the episode from the uploaded audio source.",
-    "audioFallback": "No uploaded audio found, so your browser voice will narrate the episode.",
+    "audioFallback": "ElevenLabs is unavailable or out of credits, so your browser voice will narrate the episode.",
     "audioUnavailable": "Audio narration is not available on this device.",
-    "pageHint": "Tap, click, or swipe to turn pages like a book."
+    "pageHint": "Tap, click, or swipe to turn pages like a book.",
+    "audioEnhanced": "Narrating this episode with ElevenLabs AI voice.",
+    "audioLoading": "Preparing the ElevenLabs voice for this episode..."
   },
   "Footer": {
     "tagline": "Classic literature atmosphere meets modern AI storytelling.",
