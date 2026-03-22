@@ -8,7 +8,15 @@ import type {Locale} from '@/i18n/config';
 export default async function HomePage() {
   const locale = (await getLocale()) as Locale;
   const t = await getTranslations('Home');
-  const stories = getStories(locale);
+  const stories = await getStories(locale);
+
+  if (!stories.length) {
+    return (
+      <div className="space-y-16 sm:space-y-20">
+        <HeroSection />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-16 sm:space-y-20">

@@ -6,7 +6,7 @@ import type {Locale} from '@/i18n/config';
 export default async function LibraryPage() {
   const locale = (await getLocale()) as Locale;
   const t = await getTranslations('Library');
-  const stories = getStories(locale);
+  const stories = await getStories(locale);
 
   return (
     <div className="space-y-10">
