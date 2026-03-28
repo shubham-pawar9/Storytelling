@@ -1,7 +1,7 @@
-import Link from 'next/link';
 import {getTranslations} from 'next-intl/server';
 import type {Story} from '@/data/stories';
 import {StoryImage} from './story-image';
+import {LoaderLink} from './loader-link';
 
 export async function FeaturedNarrative({story, locale}: {story: Story; locale: string}) {
   const t = await getTranslations('Home');
@@ -13,9 +13,9 @@ export async function FeaturedNarrative({story, locale}: {story: Story; locale: 
           <p className="text-sm uppercase tracking-[0.35em] text-primary">{t('featuredLabel')}</p>
           <h2 className="font-serif text-4xl">{story.title}</h2>
           <p className="text-muted leading-8">{story.description}</p>
-          <Link href={`/${locale}/stories/${story.id}/1`} className="inline-flex rounded-full border border-border px-5 py-3 text-sm font-semibold uppercase tracking-[0.2em] text-foreground transition hover:border-primary hover:text-primary">
+          <LoaderLink href={`/${locale}/stories/${story.id}/1`} className="inline-flex rounded-full border border-border px-5 py-3 text-sm font-semibold uppercase tracking-[0.2em] text-foreground transition hover:border-primary hover:text-primary" loaderMessage="Opening book...">
             {t('readFeatured')}
-          </Link>
+          </LoaderLink>
         </div>
         <div className="relative min-h-72 overflow-hidden rounded-[1.5rem] border border-border">
           <StoryImage src={story.featureImage} alt={story.title} fill className="object-cover" sizes="(max-width: 1024px) 100vw, 40vw" />

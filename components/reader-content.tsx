@@ -7,6 +7,7 @@ import type {Episode, Story} from '@/data/stories';
 import type {Locale} from '@/i18n/config';
 import {StoryImage} from './story-image';
 import {cn} from './utils';
+import {useLoader} from './loader-context';
 
 type ReaderContentProps = {
   story: Story;
@@ -33,67 +34,24 @@ type ReaderContentProps = {
 
 const CONTROLS_AUTOHIDE_MS = 2800;
 
-function paginateEpisodeContent(content: string[], viewportHeight: number) {
-  const normalizedHeight = Math.max(viewportHeight, 640);
-  const charsPerPage = Math.max(900, Math.floor((normalizedHeight / 860) * 1700));
-  const sentenceChunks = content
-    .flatMap((paragraph) => paragraph.split(/(?<=[.!?])\s+/u))
-    .map((chunk) => chunk.trim())
-    .filter(Boolean);
-
-  if (!sentenceChunks.length) {
-    return [''];
-  }
-
-  const pages: string[] = [];
-  let currentPage = '';
-
-  for (const chunk of sentenceChunks) {
-    if (!currentPage) {
-      currentPage = chunk;
-      continue;
-    }
-
-    if (currentPage.length + chunk.length + 1 > charsPerPage) {
-      pages.push(currentPage);
-      currentPage = chunk;
-      continue;
-    }
-
-    currentPage = `${currentPage} ${chunk}`;
-  }
-
-  if (currentPage) {
-    pages.push(currentPage);
-  }
-
-  return pages;
-}
-
 export function ReaderContent({story, episode, episodes, locale, storyId, labels}: ReaderContentProps) {
   const router = useRouter();
+  const {showLoader, isLoading} = useLoader();
   const readingContainerRef = useRef<HTMLElement | null>(null);
-  const pageScrollRef = useRef<HTMLDivElement | null>(null);
+  const contentScrollRef = useRef<HTMLDivElement | null>(null);
   const controlsHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isControlsVisible, setIsControlsVisible] = useState(false);
-  const [viewportHeight, setViewportHeight] = useState(900);
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentEpisodeIndex, setCurrentEpisodeIndex] = useState(0);
 
-  const previousEpisodeNumber = useMemo(
-    () => (episode.episodeNumber > 1 ? episode.episodeNumber - 1 : episode.episodeNumber),
-    [episode.episodeNumber]
-  );
-  const nextEpisodeNumber = useMemo(
-    () => (episode.episodeNumber < episodes.length ? episode.episodeNumber + 1 : episode.episodeNumber),
-    [episode.episodeNumber, episodes.length]
-  );
-  const isFirstEpisode = episode.episodeNumber === 1;
-  const isLastEpisode = episode.episodeNumber === episodes.length;
+  useEffect(() => {
+    const index = episodes.findIndex((entry) => entry.id === episode.id);
+    setCurrentEpisodeIndex(index >= 0 ? index : 0);
+  }, [episode.id, episodes]);
 
-  const paginatedPages = useMemo(() => paginateEpisodeContent(episode.content, viewportHeight), [episode.content, viewportHeight]);
-  const totalPages = paginatedPages.length;
+  const isFirstEpisode = currentEpisodeIndex <= 0;
+  const isLastEpisode = currentEpisodeIndex >= episodes.length - 1;
 
   const clearControlsTimer = useCallback(() => {
     if (!controlsHideTimer.current) {
@@ -170,38 +128,47 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
     await enterFullscreen();
   }, [enterFullscreen, exitFullscreen, isFullscreen]);
 
+  const navigateToEpisode = useCallback(
+    (targetIndex: number) => {
+      const nextEpisode = episodes[targetIndex];
+
+      if (!nextEpisode || isLoading) {
+        return;
+      }
+
+      showLoader({message: 'Loading episode...', minDurationMs: 400});
+      router.push(`/${locale}/stories/${storyId}/${nextEpisode.episodeNumber}`);
+    },
+    [episodes, isLoading, locale, router, showLoader, storyId]
+  );
+
   const goToPreviousEpisode = useCallback(() => {
     if (isFirstEpisode) {
       return;
     }
 
-    router.push(`/${locale}/stories/${storyId}/${previousEpisodeNumber}`);
-  }, [isFirstEpisode, locale, previousEpisodeNumber, router, storyId]);
+    navigateToEpisode(currentEpisodeIndex - 1);
+  }, [currentEpisodeIndex, isFirstEpisode, navigateToEpisode]);
 
   const goToNextEpisode = useCallback(() => {
     if (isLastEpisode) {
       return;
     }
 
-    router.push(`/${locale}/stories/${storyId}/${nextEpisodeNumber}`);
-  }, [isLastEpisode, locale, nextEpisodeNumber, router, storyId]);
+    navigateToEpisode(currentEpisodeIndex + 1);
+  }, [currentEpisodeIndex, isLastEpisode, navigateToEpisode]);
 
   useEffect(() => {
-    setCurrentPage(1);
+    if (contentScrollRef.current) {
+      contentScrollRef.current.scrollTo({top: 0, behavior: 'auto'});
+    }
+
+    if (!isFullscreen) {
+      return;
+    }
+
+    window.scrollTo({top: 0, behavior: 'auto'});
   }, [episode.id, isFullscreen]);
-
-  useEffect(() => {
-    const syncViewportHeight = () => {
-      setViewportHeight(window.innerHeight || 900);
-    };
-
-    syncViewportHeight();
-    window.addEventListener('resize', syncViewportHeight);
-
-    return () => {
-      window.removeEventListener('resize', syncViewportHeight);
-    };
-  }, []);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -259,27 +226,6 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
   }, [isFullscreen]);
 
   useEffect(() => () => clearControlsTimer(), [clearControlsTimer]);
-
-  useEffect(() => {
-    if (!isFullscreen || !pageScrollRef.current) {
-      return;
-    }
-
-    const scrollElement = pageScrollRef.current;
-
-    const handleScroll = () => {
-      const page = Math.round(scrollElement.scrollTop / Math.max(scrollElement.clientHeight, 1)) + 1;
-      const clampedPage = Math.min(Math.max(page, 1), totalPages);
-      setCurrentPage(clampedPage);
-      revealControls();
-    };
-
-    scrollElement.addEventListener('scroll', handleScroll, {passive: true});
-
-    return () => {
-      scrollElement.removeEventListener('scroll', handleScroll);
-    };
-  }, [isFullscreen, revealControls, totalPages]);
 
   useEffect(() => {
     if (!isFullscreen) {
@@ -383,7 +329,7 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
                 <button
                   type="button"
                   aria-label={labels.previousEpisode}
-                  disabled={isFirstEpisode}
+                  disabled={isFirstEpisode || isLoading}
                   onClick={goToPreviousEpisode}
                   className="inline-flex items-center gap-2 rounded-full border border-border bg-background/65 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-foreground backdrop-blur transition hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
                 >
@@ -393,7 +339,7 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
                 <button
                   type="button"
                   aria-label={labels.nextEpisode}
-                  disabled={isLastEpisode}
+                  disabled={isLastEpisode || isLoading}
                   onClick={goToNextEpisode}
                   className="inline-flex items-center gap-2 rounded-full border border-border bg-background/65 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-foreground backdrop-blur transition hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
                 >
@@ -414,18 +360,18 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
               aria-live="polite"
             >
               <span className="rounded-full border border-border/70 bg-background/70 px-3 py-1 text-xs tracking-[0.2em] text-foreground/90 backdrop-blur">
-                Page {currentPage} / {totalPages}
+                Episode {currentEpisodeIndex + 1} / {episodes.length}
               </span>
             </div>
           </>
         ) : null}
 
         <div
-          ref={pageScrollRef}
+          ref={contentScrollRef}
           className={cn(
             'drop-cap overflow-y-auto overscroll-contain px-6 py-8 sm:px-8 lg:px-10',
             isFullscreen
-              ? 'h-screen w-screen snap-y snap-mandatory scroll-smooth bg-background px-0 py-0'
+              ? 'h-screen w-screen scroll-smooth bg-background px-0 py-0'
               : 'scroll-smooth'
           )}
           style={
@@ -438,28 +384,23 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
           }
           onWheel={revealControls}
         >
-          {isFullscreen ? (
-            paginatedPages.map((page, index) => (
-              <div
-                key={`${episode.id}-page-${index}`}
-                className="mx-auto flex min-h-screen w-full max-w-3xl snap-start items-center px-6 sm:px-10"
-                style={{
-                  paddingTop: 'max(calc(env(safe-area-inset-top) + 5rem), 5.5rem)',
-                  paddingBottom: 'max(calc(env(safe-area-inset-bottom) + 7rem), 7.5rem)'
-                }}
-              >
-                <p className="w-full text-lg leading-9 text-foreground">{page}</p>
-              </div>
-            ))
-          ) : (
-            <div className="mx-auto max-w-3xl">
-              {episode.content.map((paragraph, index) => (
-                <p key={`${episode.id}-${index}`} className="mb-6 text-lg leading-9 text-foreground last:mb-0">
-                  {paragraph}
-                </p>
-              ))}
-            </div>
-          )}
+          <div
+            className={cn('mx-auto max-w-3xl', isFullscreen ? 'px-6 pb-16 pt-24 sm:px-10' : '')}
+            style={
+              isFullscreen
+                ? {
+                    paddingTop: 'max(calc(env(safe-area-inset-top) + 5rem), 5.5rem)',
+                    paddingBottom: 'max(calc(env(safe-area-inset-bottom) + 7rem), 7.5rem)'
+                  }
+                : undefined
+            }
+          >
+            {episode.content.map((paragraph, index) => (
+              <p key={`${episode.id}-${index}`} className="mb-6 text-lg leading-9 text-foreground last:mb-0">
+                {paragraph}
+              </p>
+            ))}
+          </div>
         </div>
       </section>
 
@@ -467,7 +408,7 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
         <button
           type="button"
           onClick={goToNextEpisode}
-          disabled={isLastEpisode}
+          disabled={isLastEpisode || isLoading}
           className="inline-flex items-center gap-2 rounded-full border border-border px-5 py-3 text-sm font-semibold uppercase tracking-[0.2em] text-foreground transition hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
         >
           {labels.nextEpisode}

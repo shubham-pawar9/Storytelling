@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import {notFound} from 'next/navigation';
 import {ChevronLeft, ChevronRight} from 'lucide-react';
 import {getLocale, getTranslations} from 'next-intl/server';
@@ -6,6 +5,7 @@ import {EpisodeSidebar} from '@/components/episode-sidebar';
 import {ProgressBar} from '@/components/progress-bar';
 import {ReaderContent} from '@/components/reader-content';
 import {ReaderToolbar} from '@/components/reader-toolbar';
+import {LoaderLink} from '@/components/loader-link';
 import {getEpisode, getEpisodes, getStory} from '@/data/stories';
 import type {Locale} from '@/i18n/config';
 
@@ -33,9 +33,9 @@ export default async function StoryReaderPage({params}: {params: Promise<{storyI
       <div className="flex flex-col gap-6 border-b border-border pb-6 lg:flex-row lg:items-center lg:justify-between">
         <div className="space-y-3">
           <nav aria-label={t('breadcrumb')} className="flex flex-wrap items-center gap-2 text-sm text-muted">
-            <Link href={`/${locale}`}>{t('home')}</Link>
+            <LoaderLink href={`/${locale}`} loaderMessage="Loading...">{t('home')}</LoaderLink>
             <span>/</span>
-            <Link href={`/${locale}/library`}>{t('library')}</Link>
+            <LoaderLink href={`/${locale}/library`} loaderMessage="Opening library...">{t('library')}</LoaderLink>
             <span>/</span>
             <span className="text-foreground">{story.title}</span>
           </nav>
@@ -76,16 +76,16 @@ export default async function StoryReaderPage({params}: {params: Promise<{storyI
             <ProgressBar value={progress} label={t('readingProgress')} />
             <div className="flex flex-col gap-3 sm:flex-row sm:justify-between">
               {prevEpisode ? (
-                <Link href={`/${locale}/stories/${storyId}/${prevEpisode}`} className="inline-flex items-center justify-center gap-2 rounded-full border border-border px-5 py-3 text-sm font-semibold uppercase tracking-[0.2em] text-foreground transition hover:border-primary hover:text-primary">
+                <LoaderLink href={`/${locale}/stories/${storyId}/${prevEpisode}`} className="inline-flex items-center justify-center gap-2 rounded-full border border-border px-5 py-3 text-sm font-semibold uppercase tracking-[0.2em] text-foreground transition hover:border-primary hover:text-primary" loaderMessage="Loading episode...">
                   <ChevronLeft className="h-4 w-4" />
                   {t('previousEpisode')}
-                </Link>
+                </LoaderLink>
               ) : <div />}
               {nextEpisode ? (
-                <Link href={`/${locale}/stories/${storyId}/${nextEpisode}`} className="inline-flex items-center justify-center gap-2 rounded-full bg-primary px-5 py-3 text-sm font-semibold uppercase tracking-[0.2em] text-white transition active:translate-y-0.5 dark:text-stone-950">
+                <LoaderLink href={`/${locale}/stories/${storyId}/${nextEpisode}`} className="inline-flex items-center justify-center gap-2 rounded-full bg-primary px-5 py-3 text-sm font-semibold uppercase tracking-[0.2em] text-white transition active:translate-y-0.5 dark:text-stone-950" loaderMessage="Loading episode...">
                   {t('nextEpisode')}
                   <ChevronRight className="h-4 w-4" />
-                </Link>
+                </LoaderLink>
               ) : null}
             </div>
           </div>
