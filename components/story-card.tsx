@@ -1,7 +1,7 @@
-import Link from 'next/link';
 import {getTranslations} from 'next-intl/server';
 import type {Story} from '@/data/stories';
 import {StoryImage} from './story-image';
+import {LoaderLink} from './loader-link';
 
 export async function StoryCard({story, locale}: {story: Story; locale: string}) {
   const t = await getTranslations('Library');
@@ -22,9 +22,9 @@ export async function StoryCard({story, locale}: {story: Story; locale: string})
           </span>
         </div>
         <p className="flex-1 text-sm leading-7 text-muted">{story.description}</p>
-        <Link href={`/${locale}/stories/${story.id}/1`} className="inline-flex items-center justify-center rounded-full bg-primary px-4 py-3 text-sm font-semibold uppercase tracking-[0.2em] text-white transition active:translate-y-0.5 dark:text-stone-950">
+        <LoaderLink href={`/${locale}/stories/${story.id}/1`} className="inline-flex items-center justify-center rounded-full bg-primary px-4 py-3 text-sm font-semibold uppercase tracking-[0.2em] text-white transition active:translate-y-0.5 dark:text-stone-950" loaderMessage="Opening book...">
           {t('readStory')}
-        </Link>
+        </LoaderLink>
       </div>
     </article>
   );

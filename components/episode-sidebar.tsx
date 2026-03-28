@@ -1,10 +1,10 @@
 'use client';
 
-import Link from 'next/link';
 import {Menu, X} from 'lucide-react';
 import {useTranslations} from 'next-intl';
 import {useState} from 'react';
 import {cn} from './utils';
+import {LoaderLink} from './loader-link';
 import type {Episode} from '@/data/stories';
 
 export function EpisodeSidebar({episodes, activeEpisode, locale, storyId}: {episodes: Episode[]; activeEpisode: number; locale: string; storyId: string}) {
@@ -18,10 +18,11 @@ export function EpisodeSidebar({episodes, activeEpisode, locale, storyId}: {epis
       </div>
       <div className="max-h-[60vh] space-y-2 overflow-y-auto p-4 lg:max-h-[calc(100vh-14rem)]">
         {episodes.map((episode) => (
-          <Link
+          <LoaderLink
             key={episode.id}
             href={`/${locale}/stories/${storyId}/${episode.episodeNumber}`}
             onClick={() => setOpen(false)}
+            loaderMessage="Loading episode..."
             className={cn(
               'block rounded-2xl border px-4 py-3 text-sm transition',
               episode.episodeNumber === activeEpisode
@@ -31,7 +32,7 @@ export function EpisodeSidebar({episodes, activeEpisode, locale, storyId}: {epis
           >
             <span className="block text-xs uppercase tracking-[0.25em]">{t('part', {number: episode.episodeNumber})}</span>
             <span className="mt-1 block font-medium text-foreground">{episode.title}</span>
-          </Link>
+          </LoaderLink>
         ))}
       </div>
     </div>
