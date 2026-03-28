@@ -123,6 +123,9 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
   const canGoPrevious = spreadIndex - spreadStep >= 0;
   const canGoNext = spreadIndex + spreadStep < episodes.length;
   const nextEpisodeNumber = episode.episodeNumber < episodes.length ? episode.episodeNumber + 1 : episode.episodeNumber;
+  const fullscreenPageLabel = isMobileFullscreen
+    ? `${currentSpread.left.episodeNumber}/${episodes.length}`
+    : `${currentSpread.left.episodeNumber}${currentSpread.right ? `-${currentSpread.right.episodeNumber}` : ''}/${episodes.length}`;
 
   const changeSpread = useCallback((nextIndex: number) => {
     if (nextIndex < 0 || nextIndex >= episodes.length) {
@@ -326,11 +329,11 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
                 const deltaY = touchEndY - touchStartY.current;
 
                 if (isMobileFullscreen) {
-                  if (Math.abs(deltaY) < 30) {
+                  if (Math.abs(deltaX) < 30 || Math.abs(deltaX) < Math.abs(deltaY)) {
                     return;
                   }
 
-                  if (deltaY < 0) {
+                  if (deltaX < 0) {
                     changeSpread(spreadIndex + 1);
                   } else {
                     changeSpread(spreadIndex - 1);
@@ -374,11 +377,11 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
                   <motion.div
                     key={currentSpread.left.id}
                     custom={direction}
-                    initial={{rotateY: direction > 0 ? -18 : 18, opacity: 0.2, x: direction > 0 ? 80 : -80}}
-                    animate={{rotateY: 0, opacity: 1, x: 0}}
-                    exit={{rotateY: direction > 0 ? 16 : -16, opacity: 0.08, x: direction > 0 ? -80 : 80}}
-                    transition={{duration: 0.5, ease: 'easeInOut'}}
-                    className="reader-spread flex h-full w-full origin-center overflow-hidden border-y border-border bg-card sm:rounded-[2rem] sm:border"
+                    initial={{opacity: 0, x: direction > 0 ? 56 : -56}}
+                    animate={{opacity: 1, x: 0}}
+                    exit={{opacity: 0, x: direction > 0 ? -56 : 56}}
+                    transition={{duration: 0.35, ease: 'easeOut'}}
+                    className="reader-spread flex h-full w-full origin-center overflow-hidden border-y border-border bg-card will-change-transform sm:rounded-[2rem] sm:border"
                   >
                     {(isMobileFullscreen ? [currentSpread.left] : [currentSpread.left, currentSpread.right]).map((spreadEpisode, pageIndex) => (
                       <section
@@ -418,6 +421,10 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
                     ))}
                   </motion.div>
                 </AnimatePresence>
+              </div>
+
+              <div className="pointer-events-none absolute bottom-5 left-1/2 z-30 -translate-x-1/2 rounded-full border border-border/70 bg-background/80 px-4 py-1.5 text-xs font-semibold tracking-[0.2em] text-foreground shadow-paper backdrop-blur">
+                {fullscreenPageLabel}
               </div>
             </div>
           </motion.div>
