@@ -40,7 +40,10 @@ function getHighlightClass(isActive: boolean) {
 export function ReaderContent({story, episode, episodes, locale, storyId, labels}: ReaderContentProps) {
   const router = useRouter();
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [spreadIndex, setSpreadIndex] = useState(() => episodes.findIndex((entry) => entry.id === episode.id));
+  const [spreadIndex, setSpreadIndex] = useState(() => {
+    const initialIndex = episodes.findIndex((entry) => entry.id === episode.id);
+    return initialIndex < 0 ? 0 : Math.floor(initialIndex / 2) * 2;
+  });
   const [direction, setDirection] = useState(1);
   const [activeReadingParagraph] = useState<number | null>(null);
   const [activeFullscreenParagraph] = useState<number | null>(null);
@@ -49,7 +52,14 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
   const [isMobileFullscreen, setIsMobileFullscreen] = useState(false);
 
   useEffect(() => {
-    setSpreadIndex(episodes.findIndex((entry) => entry.id === episode.id));
+    const currentIndex = episodes.findIndex((entry) => entry.id === episode.id);
+
+    if (currentIndex < 0) {
+      setSpreadIndex(0);
+      return;
+    }
+
+    setSpreadIndex(Math.floor(currentIndex / 2) * 2);
   }, [episode.id, episodes]);
 
   useEffect(() => {
@@ -83,6 +93,24 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
     };
   }, [isFullscreen]);
 
+  useEffect(() => {
+    if (typeof document === 'undefined') {
+      return;
+    }
+
+    const handleFullscreenChange = () => {
+      if (!document.fullscreenElement) {
+        setIsFullscreen(false);
+      }
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, []);
+
   const currentSpread = useMemo(
     () => ({
       left: episodes[Math.max(spreadIndex, 0)] ?? episode,
@@ -112,10 +140,34 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
   const handleCloseFullscreen = useCallback(() => {
     setIsFullscreen(false);
 
+    if (typeof document !== 'undefined' && document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => {
+        // Ignore browser fullscreen API failures and keep modal fallback.
+      });
+    }
+
     if (currentSpread.left.id !== episode.id) {
       router.push(`/${locale}/stories/${storyId}/${currentSpread.left.episodeNumber}`);
     }
   }, [currentSpread.left, episode.id, locale, router, storyId]);
+
+  const handleOpenFullscreen = useCallback(async () => {
+    setIsFullscreen(true);
+
+    if (typeof document === 'undefined') {
+      return;
+    }
+
+    const rootElement = document.documentElement;
+
+    if (!document.fullscreenElement && rootElement.requestFullscreen) {
+      try {
+        await rootElement.requestFullscreen({navigationUI: 'hide'});
+      } catch {
+        // Some browsers/devices can reject fullscreen requests. Keep UI fullscreen fallback.
+      }
+    }
+  }, []);
 
   useEffect(() => {
     if (!isFullscreen) {
@@ -158,7 +210,9 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
           <button
             type="button"
             aria-label={labels.fullscreen}
-            onClick={() => setIsFullscreen(true)}
+            onClick={() => {
+              void handleOpenFullscreen();
+            }}
             className="inline-flex items-center gap-2 self-start rounded-full border border-border bg-card px-4 py-2 text-sm font-semibold uppercase tracking-[0.2em] text-foreground transition hover:border-primary hover:text-primary"
           >
             <Expand className="h-4 w-4" />
