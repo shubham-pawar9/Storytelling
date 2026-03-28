@@ -1,12 +1,11 @@
 'use client';
 
 import {AnimatePresence, motion} from 'framer-motion';
-import {ChevronLeft, ChevronRight, Expand, LoaderCircle, X} from 'lucide-react';
+import {ChevronLeft, ChevronRight, Expand, X} from 'lucide-react';
 import {useRouter} from 'next/navigation';
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import type {Episode, Story} from '@/data/stories';
 import type {Locale} from '@/i18n/config';
-import {EpisodeAudioPlayer, type EpisodeAudioPlayerHandle} from './episode-audio-player';
 import {StoryImage} from './story-image';
 
 type ReaderContentProps = {
@@ -40,40 +39,39 @@ function getHighlightClass(isActive: boolean) {
 
 export function ReaderContent({story, episode, episodes, locale, storyId, labels}: ReaderContentProps) {
   const router = useRouter();
-  const fullscreenAudioRef = useRef<EpisodeAudioPlayerHandle | null>(null);
-  const countdownTimerRef = useRef<number | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [spreadIndex, setSpreadIndex] = useState(() => episodes.findIndex((entry) => entry.id === episode.id));
   const [direction, setDirection] = useState(1);
-  const [isFullscreenAudioEnabled, setIsFullscreenAudioEnabled] = useState(false);
-  const [isFullscreenAudioPrimed, setIsFullscreenAudioPrimed] = useState(false);
-  const [autoplayCountdown, setAutoplayCountdown] = useState<number | null>(null);
-  const [activeReadingParagraph, setActiveReadingParagraph] = useState<number | null>(null);
-  const [activeFullscreenParagraph, setActiveFullscreenParagraph] = useState<number | null>(null);
+  const [activeReadingParagraph] = useState<number | null>(null);
+  const [activeFullscreenParagraph] = useState<number | null>(null);
   const touchStartX = useRef<number | null>(null);
-  const isSwitchingSpreadRef = useRef(false);
-
-  const stopAutoplayCountdown = useCallback(() => {
-    if (countdownTimerRef.current) {
-      window.clearInterval(countdownTimerRef.current);
-      countdownTimerRef.current = null;
-    }
-
-    setAutoplayCountdown(null);
-  }, []);
+  const touchStartY = useRef<number | null>(null);
+  const [isMobileFullscreen, setIsMobileFullscreen] = useState(false);
 
   useEffect(() => {
     setSpreadIndex(episodes.findIndex((entry) => entry.id === episode.id));
-    setActiveReadingParagraph(null);
   }, [episode.id, episodes]);
 
   useEffect(() => {
-    setActiveFullscreenParagraph(null);
-  }, [spreadIndex]);
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const mediaQuery = window.matchMedia('(max-width: 639px)');
+    const updateMobileState = () => {
+      setIsMobileFullscreen(mediaQuery.matches);
+    };
+
+    updateMobileState();
+    mediaQuery.addEventListener('change', updateMobileState);
+
+    return () => {
+      mediaQuery.removeEventListener('change', updateMobileState);
+    };
+  }, []);
 
   useEffect(() => {
     if (!isFullscreen) {
-      isSwitchingSpreadRef.current = false;
       return;
     }
 
@@ -85,12 +83,6 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
     };
   }, [isFullscreen]);
 
-  useEffect(() => {
-    return () => {
-      stopAutoplayCountdown();
-    };
-  }, [stopAutoplayCountdown]);
-
   const currentSpread = useMemo(
     () => ({
       left: episodes[Math.max(spreadIndex, 0)] ?? episode,
@@ -99,9 +91,9 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
     [episode, episodes, spreadIndex]
   );
 
-  const canGoPrevious = spreadIndex > 0;
-  const canGoNext = spreadIndex < episodes.length - 1;
-  const previousEpisodeNumber = episode.episodeNumber > 1 ? episode.episodeNumber - 1 : 1;
+  const spreadStep = isMobileFullscreen ? 1 : 2;
+  const canGoPrevious = spreadIndex - spreadStep >= 0;
+  const canGoNext = spreadIndex + spreadStep < episodes.length;
   const nextEpisodeNumber = episode.episodeNumber < episodes.length ? episode.episodeNumber + 1 : episode.episodeNumber;
 
   const changeSpread = useCallback((nextIndex: number) => {
@@ -109,84 +101,24 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
       return;
     }
 
-    isSwitchingSpreadRef.current = isFullscreenAudioPrimed;
-    fullscreenAudioRef.current?.pause();
-    setActiveFullscreenParagraph(null);
-    stopAutoplayCountdown();
     setDirection(nextIndex > spreadIndex ? 1 : -1);
     setSpreadIndex(nextIndex);
-  }, [episodes.length, isFullscreenAudioPrimed, spreadIndex, stopAutoplayCountdown]);
-
-  const handlePreviousEpisode = useCallback(() => {
-    router.push(`/${locale}/stories/${storyId}/${previousEpisodeNumber}`);
-  }, [locale, previousEpisodeNumber, router, storyId]);
+  }, [episodes.length, spreadIndex]);
 
   const handleNextEpisode = useCallback(() => {
     router.push(`/${locale}/stories/${storyId}/${nextEpisodeNumber}`);
   }, [locale, nextEpisodeNumber, router, storyId]);
 
   const handleCloseFullscreen = useCallback(() => {
-    fullscreenAudioRef.current?.pause();
-    stopAutoplayCountdown();
-    setIsFullscreenAudioEnabled(false);
-    setIsFullscreenAudioPrimed(false);
     setIsFullscreen(false);
-    setActiveFullscreenParagraph(null);
 
     if (currentSpread.left.id !== episode.id) {
       router.push(`/${locale}/stories/${storyId}/${currentSpread.left.episodeNumber}`);
     }
-  }, [currentSpread.left, episode.id, locale, router, stopAutoplayCountdown, storyId]);
-
-  const handleFullscreenPlaybackStateChange = useCallback((playing: boolean) => {
-    setIsFullscreenAudioEnabled(playing);
-
-    if (playing) {
-      setIsFullscreenAudioPrimed(true);
-      isSwitchingSpreadRef.current = false;
-      return;
-    }
-
-    if (isSwitchingSpreadRef.current) {
-      return;
-    }
-
-    setIsFullscreenAudioPrimed(false);
-    stopAutoplayCountdown();
-  }, [stopAutoplayCountdown]);
-
-  const handleFullscreenEpisodeEnd = useCallback(() => {
-    if (!isFullscreenAudioEnabled || !canGoNext) {
-      return;
-    }
-
-    stopAutoplayCountdown();
-    setAutoplayCountdown(10);
-
-    countdownTimerRef.current = window.setInterval(() => {
-      setAutoplayCountdown((currentValue) => {
-        if (currentValue === null) {
-          return null;
-        }
-
-        if (currentValue <= 1) {
-          if (countdownTimerRef.current) {
-            window.clearInterval(countdownTimerRef.current);
-            countdownTimerRef.current = null;
-          }
-
-          changeSpread(spreadIndex + 1);
-          return null;
-        }
-
-        return currentValue - 1;
-      });
-    }, 1000);
-  }, [canGoNext, changeSpread, isFullscreenAudioEnabled, spreadIndex, stopAutoplayCountdown]);
+  }, [currentSpread.left, episode.id, locale, router, storyId]);
 
   useEffect(() => {
     if (!isFullscreen) {
-      isSwitchingSpreadRef.current = false;
       return;
     }
 
@@ -196,11 +128,11 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
       }
 
       if (event.key === 'ArrowRight') {
-        changeSpread(spreadIndex + 1);
+        changeSpread(spreadIndex + spreadStep);
       }
 
       if (event.key === 'ArrowLeft') {
-        changeSpread(spreadIndex - 1);
+        changeSpread(spreadIndex - spreadStep);
       }
     };
 
@@ -209,7 +141,7 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [changeSpread, handleCloseFullscreen, isFullscreen, spreadIndex]);
+  }, [changeSpread, handleCloseFullscreen, isFullscreen, spreadIndex, spreadStep]);
 
   return (
     <>
@@ -243,7 +175,17 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
             </p>
           ))}
         </div>
-        <EpisodeAudioPlayer
+        <div className="hidden justify-end lg:flex">
+          <button
+            type="button"
+            onClick={handleNextEpisode}
+            className="inline-flex items-center gap-2 rounded-full border border-border px-5 py-3 text-sm font-semibold uppercase tracking-[0.2em] text-foreground transition hover:border-primary hover:text-primary"
+          >
+            {labels.nextEpisode}
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+        {/* <EpisodeAudioPlayer
           episode={episode}
           locale={locale}
           onActiveParagraphChange={setActiveReadingParagraph}
@@ -264,7 +206,7 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
             audioEnhanced: labels.audioEnhanced,
             audioLoading: labels.audioLoading
           }}
-        />
+        /> */}
       </article>
 
       <AnimatePresence>
@@ -284,7 +226,7 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
               <X className="h-5 w-5" />
             </button>
 
-            <EpisodeAudioPlayer
+            {/* <EpisodeAudioPlayer
               ref={fullscreenAudioRef}
               episode={currentSpread.left}
               locale={locale}
@@ -310,37 +252,47 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
                 audioEnhanced: labels.audioEnhanced,
                 audioLoading: labels.audioLoading
               }}
-            />
-
-            {autoplayCountdown !== null ? (
-              <div className="pointer-events-none absolute inset-x-0 bottom-28 z-30 flex justify-center px-4">
-                <div className="inline-flex items-center gap-3 rounded-full bg-background/90 px-5 py-3 text-sm font-medium text-foreground shadow-paper backdrop-blur">
-                  <LoaderCircle className="h-4 w-4 animate-spin text-primary" />
-                  <span>{`${labels.nextEpisode} • ${autoplayCountdown}s`}</span>
-                </div>
-              </div>
-            ) : null}
+            /> */}
 
             <div
               className="reader-book relative h-screen w-screen overflow-hidden bg-background"
               onTouchStart={(event) => {
                 touchStartX.current = event.changedTouches[0]?.clientX ?? null;
+                touchStartY.current = event.changedTouches[0]?.clientY ?? null;
               }}
               onTouchEnd={(event) => {
                 const touchEndX = event.changedTouches[0]?.clientX ?? null;
-                if (touchStartX.current === null || touchEndX === null) {
+                const touchEndY = event.changedTouches[0]?.clientY ?? null;
+
+                if (touchStartX.current === null || touchEndX === null || touchStartY.current === null || touchEndY === null) {
                   return;
                 }
 
-                const delta = touchEndX - touchStartX.current;
-                if (Math.abs(delta) < 40) {
+                const deltaX = touchEndX - touchStartX.current;
+                const deltaY = touchEndY - touchStartY.current;
+
+                if (isMobileFullscreen) {
+                  if (Math.abs(deltaY) < 30) {
+                    return;
+                  }
+
+                  if (deltaY < 0) {
+                    changeSpread(spreadIndex + 1);
+                  } else {
+                    changeSpread(spreadIndex - 1);
+                  }
+
                   return;
                 }
 
-                if (delta < 0) {
-                  changeSpread(spreadIndex + 1);
+                if (Math.abs(deltaX) < 40) {
+                  return;
+                }
+
+                if (deltaX < 0) {
+                  changeSpread(spreadIndex + spreadStep);
                 } else {
-                  changeSpread(spreadIndex - 1);
+                  changeSpread(spreadIndex - spreadStep);
                 }
               }}
             >
@@ -348,7 +300,7 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
                 type="button"
                 aria-label={labels.previousEpisode}
                 className="absolute inset-y-0 left-0 z-20 hidden w-20 items-center justify-center bg-gradient-to-r from-background/70 to-transparent text-muted transition hover:text-primary disabled:cursor-not-allowed disabled:opacity-30 sm:flex"
-                onClick={() => changeSpread(spreadIndex - 1)}
+                onClick={() => changeSpread(spreadIndex - spreadStep)}
                 disabled={!canGoPrevious}
               >
                 <ChevronLeft className="h-8 w-8" />
@@ -357,7 +309,7 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
                 type="button"
                 aria-label={labels.nextEpisode}
                 className="absolute inset-y-0 right-0 z-20 hidden w-20 items-center justify-center bg-gradient-to-l from-background/70 to-transparent text-muted transition hover:text-primary disabled:cursor-not-allowed disabled:opacity-30 sm:flex"
-                onClick={() => changeSpread(spreadIndex + 1)}
+                onClick={() => changeSpread(spreadIndex + spreadStep)}
                 disabled={!canGoNext}
               >
                 <ChevronRight className="h-8 w-8" />
@@ -374,7 +326,7 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
                     transition={{duration: 0.5, ease: 'easeInOut'}}
                     className="reader-spread flex h-full w-full origin-center overflow-hidden border-y border-border bg-card sm:rounded-[2rem] sm:border"
                   >
-                    {[currentSpread.left, currentSpread.right].map((spreadEpisode, pageIndex) => (
+                    {(isMobileFullscreen ? [currentSpread.left] : [currentSpread.left, currentSpread.right]).map((spreadEpisode, pageIndex) => (
                       <section
                         key={spreadEpisode ? `${currentSpread.left.id}-${spreadEpisode.id}-${pageIndex}` : `${currentSpread.left.id}-blank-${pageIndex}`}
                         className="reader-sheet flex min-w-0 flex-1 flex-col overflow-hidden px-5 py-8 sm:px-8 lg:px-12"
