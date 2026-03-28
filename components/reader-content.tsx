@@ -1,6 +1,6 @@
 'use client';
 
-import {ChevronRight, Expand, X} from 'lucide-react';
+import {ChevronLeft, ChevronRight, Expand, X} from 'lucide-react';
 import {useRouter} from 'next/navigation';
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import type {Episode, Story} from '@/data/stories';
@@ -33,18 +33,67 @@ type ReaderContentProps = {
 
 const CONTROLS_AUTOHIDE_MS = 2800;
 
+function paginateEpisodeContent(content: string[], viewportHeight: number) {
+  const normalizedHeight = Math.max(viewportHeight, 640);
+  const charsPerPage = Math.max(900, Math.floor((normalizedHeight / 860) * 1700));
+  const sentenceChunks = content
+    .flatMap((paragraph) => paragraph.split(/(?<=[.!?])\s+/u))
+    .map((chunk) => chunk.trim())
+    .filter(Boolean);
+
+  if (!sentenceChunks.length) {
+    return [''];
+  }
+
+  const pages: string[] = [];
+  let currentPage = '';
+
+  for (const chunk of sentenceChunks) {
+    if (!currentPage) {
+      currentPage = chunk;
+      continue;
+    }
+
+    if (currentPage.length + chunk.length + 1 > charsPerPage) {
+      pages.push(currentPage);
+      currentPage = chunk;
+      continue;
+    }
+
+    currentPage = `${currentPage} ${chunk}`;
+  }
+
+  if (currentPage) {
+    pages.push(currentPage);
+  }
+
+  return pages;
+}
+
 export function ReaderContent({story, episode, episodes, locale, storyId, labels}: ReaderContentProps) {
   const router = useRouter();
   const readingContainerRef = useRef<HTMLElement | null>(null);
+  const pageScrollRef = useRef<HTMLDivElement | null>(null);
   const controlsHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [controlsVisible, setControlsVisible] = useState(false);
+  const [isControlsVisible, setIsControlsVisible] = useState(false);
+  const [viewportHeight, setViewportHeight] = useState(900);
+  const [currentPage, setCurrentPage] = useState(1);
 
+  const previousEpisodeNumber = useMemo(
+    () => (episode.episodeNumber > 1 ? episode.episodeNumber - 1 : episode.episodeNumber),
+    [episode.episodeNumber]
+  );
   const nextEpisodeNumber = useMemo(
     () => (episode.episodeNumber < episodes.length ? episode.episodeNumber + 1 : episode.episodeNumber),
     [episode.episodeNumber, episodes.length]
   );
+  const isFirstEpisode = episode.episodeNumber === 1;
+  const isLastEpisode = episode.episodeNumber === episodes.length;
+
+  const paginatedPages = useMemo(() => paginateEpisodeContent(episode.content, viewportHeight), [episode.content, viewportHeight]);
+  const totalPages = paginatedPages.length;
 
   const clearControlsTimer = useCallback(() => {
     if (!controlsHideTimer.current) {
@@ -63,9 +112,18 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
     }
 
     controlsHideTimer.current = setTimeout(() => {
-      setControlsVisible(false);
+      setIsControlsVisible(false);
     }, CONTROLS_AUTOHIDE_MS);
   }, [clearControlsTimer, isFullscreen]);
+
+  const revealControls = useCallback(() => {
+    if (!isFullscreen) {
+      return;
+    }
+
+    setIsControlsVisible(true);
+    armControlsAutoHide();
+  }, [armControlsAutoHide, isFullscreen]);
 
   const exitFullscreen = useCallback(async () => {
     if (typeof document === 'undefined') {
@@ -96,7 +154,7 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
     try {
       await readingContainerRef.current.requestFullscreen({navigationUI: 'hide'});
       setIsFullscreen(true);
-      setControlsVisible(true);
+      setIsControlsVisible(true);
       armControlsAutoHide();
     } catch {
       // Browser can reject fullscreen for platform or permission reasons.
@@ -112,20 +170,44 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
     await enterFullscreen();
   }, [enterFullscreen, exitFullscreen, isFullscreen]);
 
-  const revealControls = useCallback(() => {
-    if (!isFullscreen) {
+  const goToPreviousEpisode = useCallback(() => {
+    if (isFirstEpisode) {
       return;
     }
 
-    setControlsVisible(true);
-    armControlsAutoHide();
-  }, [armControlsAutoHide, isFullscreen]);
+    router.push(`/${locale}/stories/${storyId}/${previousEpisodeNumber}`);
+  }, [isFirstEpisode, locale, previousEpisodeNumber, router, storyId]);
+
+  const goToNextEpisode = useCallback(() => {
+    if (isLastEpisode) {
+      return;
+    }
+
+    router.push(`/${locale}/stories/${storyId}/${nextEpisodeNumber}`);
+  }, [isLastEpisode, locale, nextEpisodeNumber, router, storyId]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [episode.id, isFullscreen]);
+
+  useEffect(() => {
+    const syncViewportHeight = () => {
+      setViewportHeight(window.innerHeight || 900);
+    };
+
+    syncViewportHeight();
+    window.addEventListener('resize', syncViewportHeight);
+
+    return () => {
+      window.removeEventListener('resize', syncViewportHeight);
+    };
+  }, []);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
       const fullscreenActive = document.fullscreenElement === readingContainerRef.current;
       setIsFullscreen(fullscreenActive);
-      setControlsVisible(fullscreenActive);
+      setIsControlsVisible(fullscreenActive);
 
       if (fullscreenActive) {
         armControlsAutoHide();
@@ -178,6 +260,43 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
 
   useEffect(() => () => clearControlsTimer(), [clearControlsTimer]);
 
+  useEffect(() => {
+    if (!isFullscreen || !pageScrollRef.current) {
+      return;
+    }
+
+    const scrollElement = pageScrollRef.current;
+
+    const handleScroll = () => {
+      const page = Math.round(scrollElement.scrollTop / Math.max(scrollElement.clientHeight, 1)) + 1;
+      const clampedPage = Math.min(Math.max(page, 1), totalPages);
+      setCurrentPage(clampedPage);
+      revealControls();
+    };
+
+    scrollElement.addEventListener('scroll', handleScroll, {passive: true});
+
+    return () => {
+      scrollElement.removeEventListener('scroll', handleScroll);
+    };
+  }, [isFullscreen, revealControls, totalPages]);
+
+  useEffect(() => {
+    if (!isFullscreen) {
+      return;
+    }
+
+    const onMouseMove = () => {
+      revealControls();
+    };
+
+    window.addEventListener('mousemove', onMouseMove, {passive: true});
+
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove);
+    };
+  }, [isFullscreen, revealControls]);
+
   return (
     <article className="space-y-8">
       <div className="relative aspect-[16/7] overflow-hidden rounded-[2rem] border border-border shadow-paper">
@@ -214,62 +333,142 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
         onTouchStart={revealControls}
       >
         {isFullscreen ? (
-          <div
-            className={cn(
-              'absolute inset-x-0 top-0 z-20 flex items-center justify-between gap-3 border-b border-border/70 bg-background/85 px-4 py-3 backdrop-blur transition-opacity duration-300 sm:px-6',
-              controlsVisible ? 'opacity-100' : 'pointer-events-none opacity-0'
-            )}
-            style={{
-              paddingTop: 'max(env(safe-area-inset-top), 0.75rem)',
-              paddingLeft: 'max(env(safe-area-inset-left), 1rem)',
-              paddingRight: 'max(env(safe-area-inset-right), 1rem)'
-            }}
-          >
-            <p className="truncate text-xs uppercase tracking-[0.2em] text-muted sm:text-sm">
-              {story.title} · {episode.title}
-            </p>
-            <button
-              type="button"
-              aria-label={labels.closeFullscreen}
-              onClick={() => {
-                void exitFullscreen();
+          <>
+            <div
+              className={cn(
+                'absolute inset-x-0 top-0 z-30 flex items-center justify-between gap-3 border-b border-border/70 bg-background/85 px-4 py-3 backdrop-blur transition-opacity duration-300 sm:px-6',
+                isControlsVisible ? 'opacity-100' : 'pointer-events-none opacity-0'
+              )}
+              style={{
+                paddingTop: 'max(env(safe-area-inset-top), 0.75rem)',
+                paddingLeft: 'max(env(safe-area-inset-left), 1rem)',
+                paddingRight: 'max(env(safe-area-inset-right), 1rem)'
               }}
-              className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-foreground"
             >
-              <X className="h-4 w-4" />
-              {labels.closeFullscreen}
-            </button>
-          </div>
+              <p className="truncate text-xs uppercase tracking-[0.2em] text-muted sm:text-sm">
+                {story.title} · {episode.title}
+              </p>
+              <button
+                type="button"
+                aria-label={labels.closeFullscreen}
+                onClick={() => {
+                  void exitFullscreen();
+                }}
+                className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-foreground"
+              >
+                <X className="h-4 w-4" />
+                {labels.closeFullscreen}
+              </button>
+            </div>
+
+            <div
+              className={cn(
+                'pointer-events-none absolute inset-x-0 bottom-0 z-20 h-40 bg-gradient-to-t from-background/90 via-background/50 to-transparent transition-opacity duration-300',
+                isControlsVisible ? 'opacity-100' : 'opacity-0'
+              )}
+            />
+
+            <div
+              className={cn(
+                'absolute inset-x-0 bottom-0 z-40 px-4 pb-3 transition-opacity duration-300 sm:px-6',
+                isControlsVisible ? 'opacity-100' : 'pointer-events-none opacity-0'
+              )}
+              style={{
+                paddingBottom: 'max(calc(env(safe-area-inset-bottom) + 0.75rem), 0.75rem)',
+                paddingLeft: 'max(env(safe-area-inset-left), 1rem)',
+                paddingRight: 'max(env(safe-area-inset-right), 1rem)'
+              }}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  aria-label={labels.previousEpisode}
+                  disabled={isFirstEpisode}
+                  onClick={goToPreviousEpisode}
+                  className="inline-flex items-center gap-2 rounded-full border border-border bg-background/65 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-foreground backdrop-blur transition hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  {labels.previousEpisode}
+                </button>
+                <button
+                  type="button"
+                  aria-label={labels.nextEpisode}
+                  disabled={isLastEpisode}
+                  onClick={goToNextEpisode}
+                  className="inline-flex items-center gap-2 rounded-full border border-border bg-background/65 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-foreground backdrop-blur transition hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {labels.nextEpisode}
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            <div
+              className={cn(
+                'pointer-events-none absolute inset-x-0 bottom-16 z-40 flex justify-center px-4 transition-opacity duration-300',
+                isControlsVisible ? 'opacity-85' : 'opacity-0'
+              )}
+              style={{
+                bottom: 'max(calc(env(safe-area-inset-bottom) + 4rem), 4rem)'
+              }}
+              aria-live="polite"
+            >
+              <span className="rounded-full border border-border/70 bg-background/70 px-3 py-1 text-xs tracking-[0.2em] text-foreground/90 backdrop-blur">
+                Page {currentPage} / {totalPages}
+              </span>
+            </div>
+          </>
         ) : null}
 
         <div
+          ref={pageScrollRef}
           className={cn(
-            'drop-cap overflow-y-auto scroll-smooth overscroll-contain px-6 py-8 sm:px-8 lg:px-10',
-            isFullscreen && 'h-screen w-screen bg-background px-6 pb-10 pt-24 sm:px-10',
-            isFullscreen && 'mx-auto max-w-3xl'
+            'drop-cap overflow-y-auto overscroll-contain px-6 py-8 sm:px-8 lg:px-10',
+            isFullscreen
+              ? 'h-screen w-screen snap-y snap-mandatory scroll-smooth bg-background px-0 py-0'
+              : 'scroll-smooth'
           )}
           style={
             isFullscreen
               ? {
-                  paddingTop: 'max(calc(env(safe-area-inset-top) + 5rem), 5.5rem)',
-                  paddingBottom: 'max(calc(env(safe-area-inset-bottom) + 2rem), 2.5rem)'
+                  scrollPaddingTop: 'max(calc(env(safe-area-inset-top) + 5rem), 5.5rem)',
+                  scrollPaddingBottom: 'max(calc(env(safe-area-inset-bottom) + 6.5rem), 6.5rem)'
                 }
               : undefined
           }
+          onWheel={revealControls}
         >
-          {episode.content.map((paragraph, index) => (
-            <p key={`${episode.id}-${index}`} className="mb-6 text-lg leading-9 text-foreground last:mb-0">
-              {paragraph}
-            </p>
-          ))}
+          {isFullscreen ? (
+            paginatedPages.map((page, index) => (
+              <div
+                key={`${episode.id}-page-${index}`}
+                className="mx-auto flex min-h-screen w-full max-w-3xl snap-start items-center px-6 sm:px-10"
+                style={{
+                  paddingTop: 'max(calc(env(safe-area-inset-top) + 5rem), 5.5rem)',
+                  paddingBottom: 'max(calc(env(safe-area-inset-bottom) + 7rem), 7.5rem)'
+                }}
+              >
+                <p className="w-full text-lg leading-9 text-foreground">{page}</p>
+              </div>
+            ))
+          ) : (
+            <div className="mx-auto max-w-3xl">
+              {episode.content.map((paragraph, index) => (
+                <p key={`${episode.id}-${index}`} className="mb-6 text-lg leading-9 text-foreground last:mb-0">
+                  {paragraph}
+                </p>
+              ))}
+            </div>
+          )}
         </div>
       </section>
 
       <div className="hidden justify-end lg:flex">
         <button
           type="button"
-          onClick={() => router.push(`/${locale}/stories/${storyId}/${nextEpisodeNumber}`)}
-          className="inline-flex items-center gap-2 rounded-full border border-border px-5 py-3 text-sm font-semibold uppercase tracking-[0.2em] text-foreground transition hover:border-primary hover:text-primary"
+          onClick={goToNextEpisode}
+          disabled={isLastEpisode}
+          className="inline-flex items-center gap-2 rounded-full border border-border px-5 py-3 text-sm font-semibold uppercase tracking-[0.2em] text-foreground transition hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
         >
           {labels.nextEpisode}
           <ChevronRight className="h-4 w-4" />
