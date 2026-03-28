@@ -1,18 +1,18 @@
-import {notFound} from 'next/navigation';
-import {ChevronLeft, ChevronRight} from 'lucide-react';
-import {getLocale, getTranslations} from 'next-intl/server';
-import {EpisodeSidebar} from '@/components/episode-sidebar';
-import {ProgressBar} from '@/components/progress-bar';
-import {ReaderContent} from '@/components/reader-content';
-import {ReaderToolbar} from '@/components/reader-toolbar';
-import {LoaderLink} from '@/components/loader-link';
-import {getEpisode, getEpisodes, getStory} from '@/data/stories';
-import type {Locale} from '@/i18n/config';
+import { notFound } from 'next/navigation';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { getLocale, getTranslations } from 'next-intl/server';
+import { EpisodeSidebar } from '@/components/episode-sidebar';
+import { ProgressBar } from '@/components/progress-bar';
+import { ReaderContent } from '@/components/reader-content';
+import { ReaderToolbar } from '@/components/reader-toolbar';
+import { LoaderLink } from '@/components/loader-link';
+import { getEpisode, getEpisodes, getStory } from '@/data/stories';
+import type { Locale } from '@/i18n/config';
 
-export default async function StoryReaderPage({params}: {params: Promise<{storyId: string; episode: string}>}) {
+export default async function StoryReaderPage({ params }: { params: Promise<{ storyId: string; episode: string }> }) {
   const locale = (await getLocale()) as Locale;
   const t = await getTranslations('Reader');
-  const {storyId, episode} = await params;
+  const { storyId, episode } = await params;
   const episodeNumber = Number(episode);
   const storyRecord = await getStory(locale, storyId);
   const currentEpisodeRecord = await getEpisode(locale, storyId, episodeNumber);
@@ -72,7 +72,7 @@ export default async function StoryReaderPage({params}: {params: Promise<{storyI
               previousEpisode: t('previousEpisode')
             }}
           />
-          <div className="paper-panel space-y-6 p-6">
+          {/* <div className="paper-panel space-y-6 p-6">
             <ProgressBar value={progress} label={t('readingProgress')} />
             <div className="flex flex-col gap-3 sm:flex-row sm:justify-between">
               {prevEpisode ? (
@@ -88,7 +88,7 @@ export default async function StoryReaderPage({params}: {params: Promise<{storyI
                 </LoaderLink>
               ) : null}
             </div>
-          </div>
+          </div> */}
         </div>
       </div>
     </div>

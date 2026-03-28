@@ -1,13 +1,13 @@
 'use client';
 
-import {ChevronLeft, ChevronRight, Expand, X} from 'lucide-react';
-import {useRouter} from 'next/navigation';
-import {useCallback, useEffect, useRef, useState} from 'react';
-import type {Episode, Story} from '@/data/stories';
-import type {Locale} from '@/i18n/config';
-import {StoryImage} from './story-image';
-import {cn} from './utils';
-import {useLoader} from './loader-context';
+import { ChevronLeft, ChevronRight, Expand, X } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { Episode, Story } from '@/data/stories';
+import type { Locale } from '@/i18n/config';
+import { StoryImage } from './story-image';
+import { cn } from './utils';
+import { useLoader } from './loader-context';
 
 type ReaderContentProps = {
   story: Story;
@@ -34,9 +34,9 @@ type ReaderContentProps = {
 
 const CONTROLS_AUTOHIDE_MS = 2800;
 
-export function ReaderContent({story, episode, episodes, locale, storyId, labels}: ReaderContentProps) {
+export function ReaderContent({ story, episode, episodes, locale, storyId, labels }: ReaderContentProps) {
   const router = useRouter();
-  const {showLoader, isLoading} = useLoader();
+  const { showLoader, isLoading } = useLoader();
   const readingContainerRef = useRef<HTMLElement | null>(null);
   const contentScrollRef = useRef<HTMLDivElement | null>(null);
   const controlsHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -111,7 +111,7 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
     }
 
     try {
-      await readingContainerRef.current.requestFullscreen({navigationUI: 'hide'});
+      await readingContainerRef.current.requestFullscreen({ navigationUI: 'hide' });
       setIsFullscreen(true);
       setIsControlsVisible(true);
       armControlsAutoHide();
@@ -137,7 +137,7 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
         return;
       }
 
-      showLoader({message: 'Loading episode...', minDurationMs: 400});
+      showLoader({ message: 'Loading episode...', minDurationMs: 400 });
 
       if (isFullscreen) {
         setCurrentEpisodeIndex(targetIndex);
@@ -168,14 +168,14 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
 
   useEffect(() => {
     if (contentScrollRef.current) {
-      contentScrollRef.current.scrollTo({top: 0, behavior: 'auto'});
+      contentScrollRef.current.scrollTo({ top: 0, behavior: 'auto' });
     }
 
     if (!isFullscreen) {
       return;
     }
 
-    window.scrollTo({top: 0, behavior: 'auto'});
+    window.scrollTo({ top: 0, behavior: 'auto' });
   }, [currentEpisode.id, isFullscreen]);
 
   useEffect(() => {
@@ -244,7 +244,7 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
       revealControls();
     };
 
-    window.addEventListener('mousemove', onMouseMove, {passive: true});
+    window.addEventListener('mousemove', onMouseMove, { passive: true });
 
     return () => {
       window.removeEventListener('mousemove', onMouseMove);
@@ -385,9 +385,9 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
           style={
             isFullscreen
               ? {
-                  scrollPaddingTop: 'max(calc(env(safe-area-inset-top) + 5rem), 5.5rem)',
-                  scrollPaddingBottom: 'max(calc(env(safe-area-inset-bottom) + 6.5rem), 6.5rem)'
-                }
+                scrollPaddingTop: 'max(calc(env(safe-area-inset-top) + 5rem), 5.5rem)',
+                scrollPaddingBottom: 'max(calc(env(safe-area-inset-bottom) + 6.5rem), 6.5rem)'
+              }
               : undefined
           }
           onWheel={revealControls}
@@ -397,9 +397,9 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
             style={
               isFullscreen
                 ? {
-                    paddingTop: 'max(calc(env(safe-area-inset-top) + 5rem), 5.5rem)',
-                    paddingBottom: 'max(calc(env(safe-area-inset-bottom) + 7rem), 7.5rem)'
-                  }
+                  paddingTop: 'max(calc(env(safe-area-inset-top) + 5rem), 5.5rem)',
+                  paddingBottom: 'max(calc(env(safe-area-inset-bottom) + 7rem), 7.5rem)'
+                }
                 : undefined
             }
           >
@@ -412,7 +412,7 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
         </div>
       </section>
 
-      <div className="hidden justify-end lg:flex">
+      <div className="justify-end lg:flex">
         <button
           type="button"
           onClick={goToNextEpisode}
@@ -423,6 +423,6 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
           <ChevronRight className="h-4 w-4" />
         </button>
       </div>
-    </article>
+    </article >
   );
 }
