@@ -16,7 +16,7 @@ export function EpisodeSidebar({episodes, activeEpisode, locale, storyId}: {epis
       <div className="border-b border-border px-4 py-4">
         <p className="text-sm uppercase tracking-[0.3em] text-primary">{t('episodeGuide')}</p>
       </div>
-      <div className="max-h-[60vh] space-y-2 overflow-y-auto p-4 lg:max-h-[calc(100vh-14rem)]">
+      <div className="space-y-2 overflow-visible p-4 lg:max-h-[calc(100vh-14rem)] lg:overflow-y-auto">
         {episodes.map((episode) => (
           <LoaderLink
             key={episode.id}

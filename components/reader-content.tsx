@@ -2,7 +2,7 @@
 
 import {ChevronLeft, ChevronRight, Expand, X} from 'lucide-react';
 import {useRouter} from 'next/navigation';
-import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import {useCallback, useEffect, useRef, useState} from 'react';
 import type {Episode, Story} from '@/data/stories';
 import type {Locale} from '@/i18n/config';
 import {StoryImage} from './story-image';
@@ -50,6 +50,7 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
     setCurrentEpisodeIndex(index >= 0 ? index : 0);
   }, [episode.id, episodes]);
 
+  const currentEpisode = episodes[currentEpisodeIndex] ?? episode;
   const isFirstEpisode = currentEpisodeIndex <= 0;
   const isLastEpisode = currentEpisodeIndex >= episodes.length - 1;
 
@@ -137,9 +138,16 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
       }
 
       showLoader({message: 'Loading episode...', minDurationMs: 400});
+
+      if (isFullscreen) {
+        setCurrentEpisodeIndex(targetIndex);
+        window.history.replaceState(null, '', `/${locale}/stories/${storyId}/${nextEpisode.episodeNumber}`);
+        return;
+      }
+
       router.push(`/${locale}/stories/${storyId}/${nextEpisode.episodeNumber}`);
     },
-    [episodes, isLoading, locale, router, showLoader, storyId]
+    [episodes, isFullscreen, isLoading, locale, router, showLoader, storyId]
   );
 
   const goToPreviousEpisode = useCallback(() => {
@@ -168,7 +176,7 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
     }
 
     window.scrollTo({top: 0, behavior: 'auto'});
-  }, [episode.id, isFullscreen]);
+  }, [currentEpisode.id, isFullscreen]);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -246,14 +254,14 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
   return (
     <article className="space-y-8">
       <div className="relative aspect-[16/7] overflow-hidden rounded-[2rem] border border-border shadow-paper">
-        <StoryImage src={episode.aiImage} alt={episode.title} fill className="object-cover" priority sizes="(max-width: 1024px) 100vw, 66vw" />
+        <StoryImage src={currentEpisode.aiImage} alt={currentEpisode.title} fill className="object-cover" priority sizes="(max-width: 1024px) 100vw, 66vw" />
       </div>
 
       <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-4">
           <p className="text-sm uppercase tracking-[0.35em] text-primary">{story.genre}</p>
           <h1 className="font-serif text-4xl sm:text-5xl">{story.title}</h1>
-          <h2 className="text-xl text-muted">{episode.title}</h2>
+          <h2 className="text-xl text-muted">{currentEpisode.title}</h2>
         </div>
         <button
           type="button"
@@ -273,7 +281,7 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
           'relative isolate flex min-h-0 flex-col overflow-hidden border border-border bg-card transition-all duration-300',
           isFullscreen
             ? 'h-screen w-screen max-w-none rounded-none border-0 bg-background text-foreground'
-            : 'paper-panel max-h-[75vh] rounded-[2rem]'
+            : 'paper-panel rounded-[2rem] lg:max-h-[75vh]'
         )}
         onPointerDown={revealControls}
         onTouchStart={revealControls}
@@ -292,7 +300,7 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
               }}
             >
               <p className="truncate text-xs uppercase tracking-[0.2em] text-muted sm:text-sm">
-                {story.title} · {episode.title}
+                {story.title} · {currentEpisode.title}
               </p>
               <button
                 type="button"
@@ -369,10 +377,10 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
         <div
           ref={contentScrollRef}
           className={cn(
-            'drop-cap overflow-y-auto overscroll-contain px-6 py-8 sm:px-8 lg:px-10',
+            'drop-cap overscroll-contain px-6 py-8 sm:px-8 lg:px-10',
             isFullscreen
-              ? 'h-screen w-screen scroll-smooth bg-background px-0 py-0'
-              : 'scroll-smooth'
+              ? 'h-screen w-screen overflow-y-auto scroll-smooth bg-background px-0 py-0'
+              : 'overflow-visible scroll-smooth lg:overflow-y-auto'
           )}
           style={
             isFullscreen
@@ -395,8 +403,8 @@ export function ReaderContent({story, episode, episodes, locale, storyId, labels
                 : undefined
             }
           >
-            {episode.content.map((paragraph, index) => (
-              <p key={`${episode.id}-${index}`} className="mb-6 text-lg leading-9 text-foreground last:mb-0">
+            {currentEpisode.content.map((paragraph, index) => (
+              <p key={`${currentEpisode.id}-${index}`} className="mb-6 text-lg leading-9 text-foreground last:mb-0">
                 {paragraph}
               </p>
             ))}
